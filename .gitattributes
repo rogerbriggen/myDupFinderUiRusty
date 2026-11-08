@@ -1,0 +1,9 @@
+* text=auto
+
+# Report fixtures must stay byte-exact (CRLF as written by the .NET backend).
+testdata/*.csv -text
+
+# Binary assets
+*.png binary
+*.ico binary
+*.icns binary

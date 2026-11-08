@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+# Gating (see docs/REBUILD_RUST_GPUI.md section 10.1):
+#   Linux   - pull requests, main, tags
+#   Windows - main, tags
+#   macOS   - tags only
+#
+# TODO (step 12): add package jobs (cargo-packager: .deb/.AppImage, .exe/.msi,
+# .app/.dmg) that depend on these jobs, and a release job for `v*` tags using
+# softprops/action-gh-release.
+
+jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain + components pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - run: cargo fmt --all -- --check
+
+  test-linux:
+    name: Clippy + test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain + components pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - name: Install GPUI system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang pkg-config \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libvulkan-dev \
+            libx11-xcb-dev libxcb1-dev \
+            libfontconfig-dev libfreetype-dev \
+            libssl-dev libasound2-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  test-windows:
+    name: Clippy + test (Windows)
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')))
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain + components pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  test-macos:
+    name: Clippy + test (macOS)
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain + components pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
