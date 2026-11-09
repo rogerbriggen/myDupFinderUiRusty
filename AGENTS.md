@@ -255,6 +255,9 @@ generation counter so stale results are dropped.
 - One concern per PR. Never commit to `main` directly.
 - Update this file when the report schema changes or a major UI contract
   shifts.
+- Every deviation from `docs/REBUILD_RUST_GPUI.md` (resolved ambiguity,
+  intentional change, deferred part) goes into `docs/DEVIATIONS.md` under the
+  PR's own heading; move that section to "Already in `main`" once merged.
 
 ---
 
