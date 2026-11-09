@@ -1,0 +1,51 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+repository = "https://github.com/rogerbriggen/myDupFinderUiRusty"
+authors = ["Roger Briggen"]
+
+[workspace.dependencies]
+# Internal crates
+dupreport-core = { path = "crates/dupreport-core" }
+
+# Core
+csv = "1"
+thiserror = "2"
+smallvec = "1"
+
+# UI. `gpui-component` 0.9 builds on the `gpui-pre` snapshot of GPUI, so the
+# versions must be pinned exactly and updated together.
+gpui = { package = "gpui-pre", version = "=0.3.11" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.11", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+gpui-component = "=0.9.0"
+
+# Later steps (persistence, async helpers, file dialog fallback)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "6"
+smol = "2"
+rfd = "0.18"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.dev]
+debug = "line-tables-only"
+
+# GPUI is heavy: optimise dependencies even in dev builds.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

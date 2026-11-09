@@ -1,0 +1,16 @@
+[package]
+name = "dupreport-core"
+description = "Domain logic for myDupFinder dupReport.csv files (no GUI dependency)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+csv.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
