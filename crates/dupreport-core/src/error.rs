@@ -28,6 +28,23 @@ impl ReportError {
             Self::InvalidReport(_) => "InvalidReport",
         }
     }
+
+    /// The message without the variant prefix that `Display` adds.
+    #[must_use]
+    pub fn message(&self) -> String {
+        match self {
+            Self::Io(e) => e.to_string(),
+            Self::Csv(e) => e.to_string(),
+            Self::Unsupported(m) | Self::InvalidReport(m) => m.clone(),
+        }
+    }
+
+    /// Text for the UI error banner: `"{kind}: {message}"`,
+    /// e.g. `InvalidReport: Row 7: unknown Category 'Foo'`.
+    #[must_use]
+    pub fn banner(&self) -> String {
+        format!("{}: {}", self.kind(), self.message())
+    }
 }
 
 #[cfg(test)]
@@ -42,6 +59,16 @@ mod tests {
             "Invalid report: Row 7: unknown Category 'Foo'"
         );
         assert_eq!(e.kind(), "InvalidReport");
+    }
+
+    #[test]
+    fn banner_is_kind_and_bare_message() {
+        let e = ReportError::InvalidReport("Row 7: unknown Category 'Foo'".into());
+        assert_eq!(e.banner(), "InvalidReport: Row 7: unknown Category 'Foo'");
+        let e = ReportError::Unsupported("nope".into());
+        assert_eq!(e.banner(), "Unsupported: nope");
+        let e: ReportError = std::io::Error::other("boom").into();
+        assert_eq!(e.banner(), "Io: boom");
     }
 
     #[test]
