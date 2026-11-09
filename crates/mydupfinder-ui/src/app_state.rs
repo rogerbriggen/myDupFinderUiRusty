@@ -16,6 +16,44 @@ pub const ASYNC_FILTER_THRESHOLD: usize = 50_000;
 /// Minimum time between two progress updates sent to the UI (~10/s).
 const PROGRESS_THROTTLE: Duration = Duration::from_millis(100);
 
+/// Rate-limits parser progress to one update per [`PROGRESS_THROTTLE`] while
+/// guaranteeing that the last update is never lost: whatever was held back is
+/// delivered by [`ProgressThrottle::finish`].
+struct ProgressThrottle<F: FnMut(ParseProgress)> {
+    send: F,
+    last_sent: Option<Instant>,
+    held_back: Option<ParseProgress>,
+}
+
+impl<F: FnMut(ParseProgress)> ProgressThrottle<F> {
+    fn new(send: F) -> Self {
+        Self {
+            send,
+            last_sent: None,
+            held_back: None,
+        }
+    }
+
+    fn offer(&mut self, p: ParseProgress) {
+        if self
+            .last_sent
+            .is_none_or(|t| t.elapsed() >= PROGRESS_THROTTLE)
+        {
+            self.last_sent = Some(Instant::now());
+            self.held_back = None;
+            (self.send)(p);
+        } else {
+            self.held_back = Some(p);
+        }
+    }
+
+    fn finish(mut self) {
+        if let Some(p) = self.held_back.take() {
+            (self.send)(p);
+        }
+    }
+}
+
 /// Whether a report is currently being loaded.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LoadState {
@@ -148,13 +186,14 @@ impl ReportStore {
 
         let (tx, rx) = smol::channel::unbounded::<ParseProgress>();
         let job = cx.background_executor().spawn(async move {
-            let mut last_sent: Option<Instant> = None;
-            Report::load(&path, |p| {
-                if last_sent.is_none_or(|t| t.elapsed() >= PROGRESS_THROTTLE) {
-                    last_sent = Some(Instant::now());
-                    let _ = tx.try_send(p);
-                }
-            })
+            let mut throttle = ProgressThrottle::new(|p| {
+                let _ = tx.try_send(p);
+            });
+            let result = Report::load(&path, |p| throttle.offer(p));
+            // The parser's final (100 %) update must reach the UI even if it
+            // arrived within the throttle window.
+            throttle.finish();
+            result
             // `tx` is dropped here, which ends the progress loop below.
         });
 
@@ -456,6 +495,41 @@ mod tests {
             );
             assert_eq!(s.filtered.len(), 25);
         });
+    }
+}
+
+#[cfg(test)]
+mod throttle_tests {
+    use super::*;
+
+    fn progress(rows_read: usize) -> ParseProgress {
+        ParseProgress {
+            rows_read,
+            bytes_read: rows_read as u64,
+            total_bytes: Some(100),
+        }
+    }
+
+    #[test]
+    fn final_progress_survives_throttling() {
+        let mut sent = Vec::new();
+        let mut throttle = ProgressThrottle::new(|p: ParseProgress| sent.push(p.rows_read));
+        // All offered within one throttle window: only the first goes out
+        // immediately, the last one is delivered by `finish`.
+        throttle.offer(progress(10));
+        throttle.offer(progress(20));
+        throttle.offer(progress(30));
+        throttle.finish();
+        assert_eq!(sent, vec![10, 30]);
+    }
+
+    #[test]
+    fn nothing_extra_when_last_progress_was_sent() {
+        let mut sent = Vec::new();
+        let mut throttle = ProgressThrottle::new(|p: ParseProgress| sent.push(p.rows_read));
+        throttle.offer(progress(10));
+        throttle.finish();
+        assert_eq!(sent, vec![10]);
     }
 }
 
