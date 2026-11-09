@@ -1,4 +1,4 @@
-//! Core report types (§5.1). `Row` and `IdenticalFolderPair` follow in step 2.
+//! Core report types (§5.1).
 
 /// File classification written by the backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -69,9 +69,127 @@ impl Source {
     }
 }
 
+/// Index into `Report::rows`.
+pub type RowIdx = u32;
+
+/// One CSV record of a dup report.
+///
+/// Construct with [`Row::new`] so the precomputed `folder_len` stays
+/// consistent with `path`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    /// Full path (`FilenameAndPath`), using `\` or `/`.
+    pub path: String,
+    /// Size in bytes.
+    pub size: i64,
+    /// SHA-512 hex (any case); may be empty.
+    pub hash: String,
+    /// Classification.
+    pub category: Category,
+    /// Originating database.
+    pub source: Source,
+    /// Group shared by rows describing the same logical file.
+    pub group_id: i32,
+    /// Byte index of the last path separator, or `u32::MAX` if there is none.
+    pub folder_len: u32,
+}
+
+impl Row {
+    /// Build a row and precompute `folder_len` from `path`.
+    #[must_use]
+    pub fn new(
+        path: String,
+        size: i64,
+        hash: String,
+        category: Category,
+        source: Source,
+        group_id: i32,
+    ) -> Self {
+        let folder_len = match path.rfind(['\\', '/']) {
+            Some(i) => u32::try_from(i).expect("path shorter than 4 GiB"),
+            None => u32::MAX,
+        };
+        Self {
+            path,
+            size,
+            hash,
+            category,
+            source,
+            group_id,
+            folder_len,
+        }
+    }
+
+    /// Folder part of the path; `""` when there is no separator.
+    #[must_use]
+    pub fn folder(&self) -> &str {
+        if self.folder_len == u32::MAX {
+            ""
+        } else {
+            &self.path[..self.folder_len as usize]
+        }
+    }
+
+    /// File name part of the path.
+    #[must_use]
+    pub fn filename(&self) -> &str {
+        if self.folder_len == u32::MAX {
+            &self.path
+        } else {
+            // Separators are ASCII, so +1 is a char boundary.
+            &self.path[self.folder_len as usize + 1..]
+        }
+    }
+}
+
+/// A folder in the Base scan whose whole subtree is duplicated in a folder
+/// of the Second scan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IdenticalFolderPair {
+    /// Base-side folder.
+    pub folder_a: String,
+    /// Second-side folder.
+    pub folder_b: String,
+    /// Files in the Base subtree.
+    pub file_count: usize,
+    /// Bytes in the Base subtree.
+    pub total_size: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn row(path: &str) -> Row {
+        Row::new(
+            path.to_string(),
+            1,
+            String::new(),
+            Category::Unique,
+            Source::Base,
+            1,
+        )
+    }
+
+    #[test]
+    fn row_folder_and_filename() {
+        let r = row(r"C:\a\b\one.txt");
+        assert_eq!((r.folder(), r.filename()), (r"C:\a\b", "one.txt"));
+        let r = row("/x/y/z.txt");
+        assert_eq!((r.folder(), r.filename()), ("/x/y", "z.txt"));
+        let r = row("bare.txt");
+        assert_eq!((r.folder(), r.filename()), ("", "bare.txt"));
+        assert_eq!(r.folder_len, u32::MAX);
+        let r = row("/top.txt");
+        assert_eq!((r.folder(), r.filename()), ("", "top.txt"));
+    }
+
+    #[test]
+    fn row_handles_non_ascii_paths() {
+        let r = row("C:\\Fotos\\Zürich\\bild ä.jpg");
+        assert_eq!(r.folder(), "C:\\Fotos\\Zürich");
+        assert_eq!(r.filename(), "bild ä.jpg");
+    }
 
     #[test]
     fn category_round_trips_in_canonical_order() {

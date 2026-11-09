@@ -14,4 +14,10 @@ pub mod status;
 pub mod tree;
 
 pub use error::ReportError;
-pub use model::{Category, Source};
+pub use identical::find_identical_folders;
+pub use model::{Category, IdenticalFolderPair, Row, RowIdx, Source};
+pub use parser::{ParseProgress, parse_file, parse_reader};
+pub use query::{RowQuery, filter};
+pub use report::Report;
+pub use status::{IdenticalStatus, compute_statuses};
+pub use tree::{FolderId, FolderNode, FolderTree, ROOT};
