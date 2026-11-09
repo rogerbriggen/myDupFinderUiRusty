@@ -299,24 +299,16 @@ impl ReportStore {
     }
 }
 
-// The setters below are wired to the folder tree (step 9) and the toolbar
-// filters (step 10); until then only the tests call them.
+// The folder-tree setters are wired (step 9); the filter setters below
+// are used by the toolbar in step 10 and until then only by the tests.
 impl ReportStore {
     /// Select a folder in the tree.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by the folder tree (step 9)")
-    )]
     pub fn select_folder(&mut self, folder: FolderId, cx: &mut Context<Self>) {
         self.selected_folder = folder;
         self.refilter(cx);
     }
 
     /// Include or exclude rows of descendant folders.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by the folder tree (step 9)")
-    )]
     pub fn set_include_descendants(&mut self, on: bool, cx: &mut Context<Self>) {
         self.include_descendants = on;
         self.refilter(cx);
