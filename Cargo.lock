@@ -1518,6 +1518,7 @@ name = "dupreport-core"
 version = "0.1.0"
 dependencies = [
  "csv",
+ "smallvec",
  "thiserror 2.0.21",
 ]
 
