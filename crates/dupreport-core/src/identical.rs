@@ -28,24 +28,27 @@ struct Dir {
 type DirTree = HashMap<String, Dir>;
 
 /// Register `folder` and all its ancestors, linking each to its parent.
+///
+/// Invariant: every folder in `tree` is already linked to all of its
+/// ancestors, so the walk can stop at the first ancestor that existed
+/// *before* this call (not at one it just created itself).
 fn register_folder(tree: &mut DirTree, folder: &str) {
+    if tree.contains_key(folder) {
+        return;
+    }
+    tree.insert(folder.to_string(), Dir::default());
     let mut cur = folder;
-    loop {
-        if tree.contains_key(cur) {
+    while let Some(parent) = parent_of(cur) {
+        let parent_existed = tree.contains_key(parent);
+        let name = split_folder_and_name(cur).1;
+        tree.entry(parent.to_string())
+            .or_default()
+            .subfolders
+            .insert(name.to_string(), cur.to_string());
+        if parent_existed {
             return;
         }
-        tree.insert(cur.to_string(), Dir::default());
-        match parent_of(cur) {
-            Some(parent) => {
-                let name = split_folder_and_name(cur).1;
-                tree.entry(parent.to_string())
-                    .or_default()
-                    .subfolders
-                    .insert(name.to_string(), cur.to_string());
-                cur = parent;
-            }
-            None => return,
-        }
+        cur = parent;
     }
 }
 
@@ -140,12 +143,15 @@ struct Detector<'a> {
     forbidden_base: &'a HashSet<&'a str>,
     forbidden_second: &'a HashSet<&'a str>,
     memo: HashMap<(String, String), bool>,
+    /// Memoised [`Self::first_partner`] per Base folder, so the candidate
+    /// search costs O(folders) in total instead of one subtree DFS per folder.
+    first_partner_memo: HashMap<&'a str, Option<(usize, &'a str)>>,
 }
 
 impl<'a> Detector<'a> {
     /// Second-side folder implied by the first paired file in `f`'s subtree.
-    fn candidate(&self, f: &str) -> Option<String> {
-        let (depth, partner_folder) = self.first_partner(f, 0)?;
+    fn candidate(&mut self, f: &'a str) -> Option<String> {
+        let (depth, partner_folder) = self.first_partner(f)?;
         let mut g = partner_folder;
         for _ in 0..depth {
             g = parent_of(g)?;
@@ -155,16 +161,27 @@ impl<'a> Detector<'a> {
 
     /// DFS (files first, then subfolders, both by name) for the first file
     /// with a partner; returns its depth below `f` and its partner's folder.
-    fn first_partner(&self, f: &str, depth: usize) -> Option<(usize, &'a str)> {
-        let dir = self.base.get(f)?;
-        for &idx in dir.files.values() {
-            if let Some(&partner) = self.pairs.get(self.rows[idx as usize].path.as_str()) {
-                return Some((depth, split_folder_and_name(partner).0));
-            }
+    fn first_partner(&mut self, f: &'a str) -> Option<(usize, &'a str)> {
+        if let Some(&hit) = self.first_partner_memo.get(f) {
+            return hit;
         }
-        dir.subfolders
-            .values()
-            .find_map(|child| self.first_partner(child, depth + 1))
+        let base: &'a DirTree = self.base;
+        let pairs: &'a HashMap<&'a str, &'a str> = self.pairs;
+        let rows: &'a [Row] = self.rows;
+        let result = base.get(f).and_then(|dir| {
+            dir.files
+                .values()
+                .find_map(|&idx| pairs.get(rows[idx as usize].path.as_str()))
+                .map(|&partner| (0, split_folder_and_name(partner).0))
+                .or_else(|| {
+                    dir.subfolders
+                        .values()
+                        .find_map(|child| self.first_partner(child))
+                        .map(|(depth, partner)| (depth + 1, partner))
+                })
+        });
+        self.first_partner_memo.insert(f, result);
+        result
     }
 
     fn is_identical(&mut self, f: &str, g: &str) -> bool {
@@ -219,9 +236,14 @@ impl<'a> Detector<'a> {
 /// in the number of rows.
 #[must_use]
 pub fn find_identical_folders(rows: &[Row]) -> Vec<IdenticalFolderPair> {
+    let pairs = pair_map(rows);
+    // Without a single Base/Second pair (e.g. a single-source report) no
+    // folder can have a candidate partner.
+    if pairs.is_empty() {
+        return Vec::new();
+    }
     let base = build_tree(rows, Source::Base);
     let second = build_tree(rows, Source::Second);
-    let pairs = pair_map(rows);
     let forbidden_base = forbidden_folders(rows, Source::Base);
     let forbidden_second = forbidden_folders(rows, Source::Second);
     let stats = base_subtree_stats(rows, &base);
@@ -234,6 +256,7 @@ pub fn find_identical_folders(rows: &[Row]) -> Vec<IdenticalFolderPair> {
         forbidden_base: &forbidden_base,
         forbidden_second: &forbidden_second,
         memo: HashMap::new(),
+        first_partner_memo: HashMap::new(),
     };
 
     let mut folders: Vec<&String> = base.keys().collect();
@@ -326,6 +349,43 @@ mod tests {
                 total_size: 300,
             }]
         );
+    }
+
+    #[test]
+    fn single_source_report_has_no_pairs() {
+        // Same-DB duplicates: every row is Base, so no Base/Second pair exists.
+        let rows = vec![
+            row(r"C:\a\one.txt", 10, Category::Duplicate, Source::Base, 1),
+            row(r"C:\b\one.txt", 10, Category::Duplicate, Source::Base, 1),
+        ];
+        assert!(find_identical_folders(&rows).is_empty());
+    }
+
+    #[test]
+    fn deep_chain_finds_maximal_pair() {
+        // 300 nested folders on each side. Regression test: every ancestor
+        // must be registered (an early exit once linked only the immediate
+        // parent, so pairs above it were never found), and the candidate
+        // search must stay cheap on deep trees (memoised).
+        let depth = 300;
+        let chain = |root: &str| (0..depth).fold(root.to_string(), |acc, i| format!(r"{acc}\d{i}"));
+        let (base, second) = (chain("C:"), chain("D:"));
+        let mut rows = Vec::new();
+        dup_pair(
+            &mut rows,
+            &format!(r"{base}\f.txt"),
+            &format!(r"{second}\f.txt"),
+            5,
+            1,
+        );
+        // A Unique file on the Base drive root keeps `C:` itself from pairing,
+        // so the maximal pair is the top of the chain.
+        rows.push(row(r"C:\other.txt", 1, Category::Unique, Source::Base, 2));
+        let pairs = find_identical_folders(&rows);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].folder_a, r"C:\d0");
+        assert_eq!(pairs[0].folder_b, r"D:\d0");
+        assert_eq!((pairs[0].file_count, pairs[0].total_size), (1, 5));
     }
 
     #[test]
@@ -428,6 +488,35 @@ mod tests {
             .join("../../testdata/Demo DiffFindDupsTheWholeLot dupReport.csv");
         let rows = parse_file(&path, |_| {}).unwrap();
         let pairs = find_identical_folders(&rows);
+        let root = r"O:\DatenP\Programmieren\repos\myDupFinder\testdata";
+        let summary: Vec<(String, String, usize, i64)> = pairs
+            .iter()
+            .map(|p| {
+                (
+                    p.folder_a.clone(),
+                    p.folder_b.clone(),
+                    p.file_count,
+                    p.total_size,
+                )
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                (
+                    format!(r"{root}\filesBase\demo\Check\CheckDetail"),
+                    format!(r"{root}\filesNew\demo\Check\CheckDetail"),
+                    4,
+                    7562
+                ),
+                (
+                    format!(r"{root}\filesBase\demo\FindDups\Helper"),
+                    format!(r"{root}\filesNew\demo\FindDups\Helper"),
+                    3,
+                    6320
+                ),
+            ]
+        );
         for w in pairs.windows(2) {
             assert!(w[0].total_size >= w[1].total_size);
         }

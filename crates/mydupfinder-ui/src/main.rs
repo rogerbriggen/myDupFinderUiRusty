@@ -6,15 +6,34 @@ mod app_state;
 mod theme;
 mod views;
 
-use gpui::{App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
+use std::path::PathBuf;
+
+use gpui::{
+    App, AppContext, Bounds, KeyBinding, TitlebarOptions, WindowBounds, WindowOptions, px, size,
+};
 use gpui_component::Root;
-use views::explorer::Explorer;
+use views::explorer::{Explorer, KEY_CONTEXT, OpenReport};
 
 const WINDOW_TITLE: &str = "myDupFinder UI";
 
+/// Ctrl+O everywhere except macOS, where it is Cmd+O.
+const OPEN_KEYSTROKE: &str = if cfg!(target_os = "macos") {
+    "cmd-o"
+} else {
+    "ctrl-o"
+};
+
 fn main() {
-    gpui_platform::application().run(|cx: &mut App| {
+    // Optional first argument: a report to open at startup.
+    let initial: Option<PathBuf> = std::env::args_os().nth(1).map(PathBuf::from);
+
+    gpui_platform::application().run(move |cx: &mut App| {
         gpui_component::init(cx);
+        cx.bind_keys([KeyBinding::new(
+            OPEN_KEYSTROKE,
+            OpenReport,
+            Some(KEY_CONTEXT),
+        )]);
 
         let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
         let options = WindowOptions {
@@ -28,7 +47,7 @@ fn main() {
         };
 
         cx.open_window(options, |window, cx| {
-            let view = cx.new(|_| Explorer);
+            let view = cx.new(|cx| Explorer::new(initial.clone(), window, cx));
             cx.new(|cx| Root::new(view, window, cx))
         })
         .expect("failed to open main window");
@@ -42,11 +61,48 @@ mod tests {
     use crate::views::explorer::PLACEHOLDER;
     use gpui::TestAppContext;
 
+    const WHOLE_LOT: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../testdata/Demo DiffFindDupsTheWholeLot dupReport.csv"
+    );
+
+    fn draw(cx: &mut gpui::VisualTestContext) {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    }
+
     #[gpui::test]
     fn explorer_renders_placeholder(cx: &mut TestAppContext) {
         cx.update(gpui_component::init);
-        let (_view, cx) = cx.add_window_view(|_, _| Explorer);
-        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let (view, cx) = cx.add_window_view(|window, cx| Explorer::new(None, window, cx));
+        draw(cx);
         assert!(PLACEHOLDER.starts_with("No report open."));
+        assert!(view.read_with(cx, |e, cx| e.store.read(cx).report.is_none()));
+    }
+
+    #[gpui::test]
+    fn explorer_renders_opened_report(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| Explorer::new(None, window, cx));
+        let store = view.read_with(cx, |e, _| e.store.clone());
+        store.update(cx, |s, cx| s.open_report(PathBuf::from(WHOLE_LOT), cx));
+        draw(cx); // loading state
+        cx.run_until_parked();
+        draw(cx); // table with rows
+        store.update(cx, |s, cx| s.set_show_hash(true, cx));
+        draw(cx); // with hash column
+        assert_eq!(store.read_with(cx, |s, _| s.filtered.len()), 64);
+    }
+
+    #[gpui::test]
+    fn explorer_renders_error_banner(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| Explorer::new(None, window, cx));
+        let store = view.read_with(cx, |e, _| e.store.clone());
+        store.update(cx, |s, cx| {
+            s.open_report(PathBuf::from("no/such/file.csv"), cx)
+        });
+        cx.run_until_parked();
+        draw(cx);
+        assert!(store.read_with(cx, |s, _| s.error.is_some()));
     }
 }

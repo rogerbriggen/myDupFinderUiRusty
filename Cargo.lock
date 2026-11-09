@@ -3959,6 +3959,7 @@ dependencies = [
  "gpui-component",
  "gpui-pre",
  "gpui-pre-platform",
+ "smol",
 ]
 
 [[package]]
