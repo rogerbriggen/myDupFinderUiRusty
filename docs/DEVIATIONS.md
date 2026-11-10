@@ -67,8 +67,6 @@ without a planned step yet.
 | Clarification | §4.1 / §5.4 Header | Header validation compares the **parsed** header fields joined with `;` (exactly the algorithm in §5.4 step 3), not the raw bytes. A quoted header field or a UTF-8 BOM (which the `csv` crate strips) is therefore accepted. Kept on purpose: such files are otherwise valid reports. |
 | Clarification | §5.9 Statuses | `compute_statuses` returns all `None` for an empty pair list, as specified ("no scan yet" → no dots). A completed scan that found nothing therefore looks like "not scanned" in the tree; the panel text in §7.6 covers both cases. If the UI should show all-red after an empty scan, step 11 tracks a "scan done" flag in `ReportStore` — no core change needed. |
 
----
-
 ### PR #4 — Folder tree, chain auto-expansion (plan step 9)
 
 | Type | Area | Deviation |
@@ -90,6 +88,13 @@ without a planned step yet.
 | Clarification | §6 Selection reset | A new report resets expansion to the root only, selection to the root and scrolls the tree to the top; this is done by the tree view noticing a different `Arc<Report>`, not by the store. |
 | Clarification | Code | `select_folder` / `set_include_descendants` / `Palette::{splitter, splitter_hover, row_selected}` lost their `expect(dead_code)`. Still pending: `Palette::status` (step 11), `TreeViewModel::{set_ranks, reveal}` (step 11), the text/hash/category/source setters (step 10). |
 | Open | Tests | Real mouse clicks (row select vs. toggle with `stop_propagation`) and key-binding dispatch are not covered by automated tests; the view's handlers (`select`, `toggle`, `press_*`) are tested directly. Manually verified on Windows: clicking focuses the tree, ↓/→ expand and select, the table refilters. |
+
+### PR #5 — CI: manual OS selection and binary artifacts
+
+| Type | Area | Deviation |
+|---|---|---|
+| Addition | §10.1 Manual runs | `workflow_dispatch` has three boolean inputs (`linux`, `windows`, `macos`, all default on), so a manual run on any branch can build just the chosen OSes. The automatic gating (Linux on PRs/main/tags, Windows on main/tags, macOS on tags) is unchanged. |
+| Addition | §10.1 Binary artifacts | Every OS job also runs `cargo build --release --locked -p mydupfinder-ui` and uploads the executable as a workflow artifact (`mydupfinder-ui-linux-x64`, `-windows-x64`, `-macos-arm64`; 14 days). These are bare, unsigned executables for testing; installers and GitHub Releases stay in step 12. The release build adds a few minutes per job, including the Linux PR job. |
 
 ---
 
