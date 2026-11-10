@@ -1,5 +1,5 @@
-//! Toolbar (§7.3). Step 7: open button, progress, status text and the hash
-//! column toggle. The filter inputs and chips arrive in step 10.
+//! Toolbar (§7.3). Open button, progress, status text, the descendants and hash
+//! column toggles. The filter inputs and chips arrive in step 10.
 
 use gpui::{
     Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Window, div,
@@ -46,6 +46,7 @@ impl Render for Toolbar {
         let loading = store.load.is_loading();
         let percent = progress_percent(&store.load);
         let show_hash = store.show_hash;
+        let include_descendants = store.include_descendants;
         let has_report = store.report.is_some();
         let status = store
             .report
@@ -84,6 +85,17 @@ impl Render for Toolbar {
                 )
             })
             .when_some(status, |d, text| d.child(div().child(text)))
+            .child(
+                Checkbox::new("include-descendants")
+                    .label("descendants")
+                    .checked(include_descendants)
+                    .disabled(!has_report)
+                    .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                        let checked = *checked;
+                        this.store
+                            .update(cx, |s, cx| s.set_include_descendants(checked, cx));
+                    })),
+            )
             .child(
                 Checkbox::new("show-hash")
                     .label("hash column")

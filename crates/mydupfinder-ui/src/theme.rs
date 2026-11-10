@@ -23,13 +23,10 @@ pub struct Palette {
     /// Error banner text.
     pub error_fg: Hsla,
     /// Splitter colour.
-    #[expect(dead_code, reason = "used by the resizable panes (steps 9 and 11)")]
     pub splitter: Hsla,
     /// Splitter colour while hovered or dragged.
-    #[expect(dead_code, reason = "used by the resizable panes (steps 9 and 11)")]
     pub splitter_hover: Hsla,
     /// Selected row background in the tree.
-    #[expect(dead_code, reason = "used by the folder tree (step 9)")]
     pub row_selected: Hsla,
     /// Identical-status dots: green, yellow, red.
     #[expect(dead_code, reason = "used by the status dots (step 11)")]

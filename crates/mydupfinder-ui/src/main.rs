@@ -4,6 +4,7 @@
 
 mod app_state;
 mod theme;
+mod tree_view_model;
 mod views;
 
 use std::path::PathBuf;
@@ -13,6 +14,7 @@ use gpui::{
 };
 use gpui_component::Root;
 use views::explorer::{Explorer, KEY_CONTEXT, OpenReport};
+use views::folder_tree;
 
 const WINDOW_TITLE: &str = "myDupFinder UI";
 
@@ -22,6 +24,19 @@ const OPEN_KEYSTROKE: &str = if cfg!(target_os = "macos") {
 } else {
     "ctrl-o"
 };
+
+/// Keyboard navigation of the folder tree (§7.4), scoped to its key context.
+fn bind_tree_keys(cx: &mut App) {
+    let ctx = Some(folder_tree::KEY_CONTEXT);
+    cx.bind_keys([
+        KeyBinding::new("up", folder_tree::SelectPrev, ctx),
+        KeyBinding::new("down", folder_tree::SelectNext, ctx),
+        KeyBinding::new("right", folder_tree::ExpandOrFirstChild, ctx),
+        KeyBinding::new("left", folder_tree::CollapseOrParent, ctx),
+        KeyBinding::new("enter", folder_tree::Activate, ctx),
+        KeyBinding::new("space", folder_tree::Activate, ctx),
+    ]);
+}
 
 fn main() {
     // Optional first argument: a report to open at startup.
@@ -34,6 +49,7 @@ fn main() {
             OpenReport,
             Some(KEY_CONTEXT),
         )]);
+        bind_tree_keys(cx);
 
         let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
         let options = WindowOptions {
@@ -91,6 +107,143 @@ mod tests {
         store.update(cx, |s, cx| s.set_show_hash(true, cx));
         draw(cx); // with hash column
         assert_eq!(store.read_with(cx, |s, _| s.filtered.len()), 64);
+    }
+
+    #[gpui::test]
+    fn tree_selection_matches_core_filter(cx: &mut TestAppContext) {
+        use dupreport_core::{FolderId, RowQuery, filter};
+
+        cx.update(gpui_component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| Explorer::new(None, window, cx));
+        let store = view.read_with(cx, |e, _| e.store.clone());
+        let tree = view.read_with(cx, |e, _| e.tree.clone());
+        store.update(cx, |s, cx| s.open_report(PathBuf::from(WHOLE_LOT), cx));
+        cx.run_until_parked();
+        draw(cx);
+
+        let report = store.read_with(cx, |s, _| s.report.clone().unwrap());
+        let expected = |id: FolderId, descendants: bool| {
+            let q = RowQuery {
+                folder: Some(report.tree.node(id).path.clone()),
+                include_descendants: descendants,
+                ..RowQuery::default()
+            };
+            filter(&report, &q).len()
+        };
+
+        for descendants in [true, false] {
+            store.update(cx, |s, cx| s.set_include_descendants(descendants, cx));
+            for id in 0..report.tree.nodes.len() as FolderId {
+                tree.update(cx, |t, cx| t.select(id, cx));
+                draw(cx);
+                assert_eq!(
+                    store.read_with(cx, |s, _| (s.selected_folder, s.filtered.len())),
+                    (id, expected(id, descendants)),
+                    "folder {id}, descendants {descendants}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn tree_expansion_keyboard_and_reset(cx: &mut TestAppContext) {
+        use dupreport_core::ROOT;
+
+        cx.update(gpui_component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| Explorer::new(None, window, cx));
+        let store = view.read_with(cx, |e, _| e.store.clone());
+        let tree = view.read_with(cx, |e, _| e.tree.clone());
+        draw(cx);
+        assert!(tree.read_with(cx, |t, _| t.model().rows().is_empty()));
+        // One level per expansion; chain auto-expansion is covered separately.
+        tree.update(cx, |t, cx| t.set_auto_expand_chains(false, cx));
+
+        store.update(cx, |s, cx| s.open_report(PathBuf::from(WHOLE_LOT), cx));
+        cx.run_until_parked();
+        draw(cx);
+        let report = store.read_with(cx, |s, _| s.report.clone().unwrap());
+        let root_children = report.tree.node(ROOT).children.clone();
+        let visible =
+            |cx: &mut gpui::VisualTestContext| tree.read_with(cx, |t, _| t.model().rows().to_vec());
+        assert_eq!(visible(cx).len(), 1 + root_children.len());
+        assert_eq!(
+            store.read_with(cx, |s, _| s.selected_folder),
+            ROOT,
+            "new report selects the root"
+        );
+
+        // Toggle expands without selecting; a second toggle collapses again.
+        let first = root_children[0];
+        let child_count = report.tree.node(first).children.len();
+        tree.update(cx, |t, cx| t.toggle(first, cx));
+        draw(cx);
+        assert_eq!(visible(cx).len(), 1 + root_children.len() + child_count);
+        assert_eq!(store.read_with(cx, |s, _| s.selected_folder), ROOT);
+        tree.update(cx, |t, cx| t.toggle(first, cx));
+        assert_eq!(visible(cx).len(), 1 + root_children.len());
+
+        // Keyboard: down selects the first child, right expands it, up returns to the root.
+        tree.update(cx, |t, cx| t.press_down(cx));
+        assert_eq!(store.read_with(cx, |s, _| s.selected_folder), first);
+        tree.update(cx, |t, cx| t.press_right(cx));
+        assert_eq!(visible(cx).len(), 1 + root_children.len() + child_count);
+        tree.update(cx, |t, cx| t.press_left(cx));
+        assert_eq!(visible(cx).len(), 1 + root_children.len());
+        tree.update(cx, |t, cx| t.press_left(cx));
+        assert_eq!(store.read_with(cx, |s, _| s.selected_folder), ROOT);
+        tree.update(cx, |t, cx| t.press_activate(cx));
+        assert_eq!(store.read_with(cx, |s, _| s.filtered.len()), 64);
+
+        // Opening another report resets expansion and selection.
+        tree.update(cx, |t, cx| t.toggle(first, cx));
+        tree.update(cx, |t, cx| t.press_down(cx));
+        store.update(cx, |s, cx| s.open_report(PathBuf::from(WHOLE_LOT), cx));
+        cx.run_until_parked();
+        draw(cx);
+        assert_eq!(visible(cx).len(), 1 + root_children.len());
+        assert_eq!(store.read_with(cx, |s, _| s.selected_folder), ROOT);
+    }
+
+    #[gpui::test]
+    fn new_report_auto_expands_the_root_chain(cx: &mut TestAppContext) {
+        use dupreport_core::ROOT;
+
+        cx.update(gpui_component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| Explorer::new(None, window, cx));
+        let store = view.read_with(cx, |e, _| e.store.clone());
+        let tree = view.read_with(cx, |e, _| e.tree.clone());
+        assert!(
+            tree.read_with(cx, |t, _| t.model().auto_expand_chains()),
+            "on by default"
+        );
+        store.update(cx, |s, cx| s.open_report(PathBuf::from(WHOLE_LOT), cx));
+        cx.run_until_parked();
+        draw(cx);
+        let report = store.read_with(cx, |s, _| s.report.clone().unwrap());
+        let t = &report.tree;
+
+        // Follow the chain from the root: every pass-through folder is expanded,
+        // and the walk ends at a folder that branches, holds files or is a leaf.
+        let mut cur = ROOT;
+        let mut depth = 0;
+        while let &[child] = t.node(cur).children.as_slice() {
+            let next = t.node(child);
+            if next.direct_file_count > 0 || next.children.is_empty() {
+                break;
+            }
+            assert!(tree.read_with(cx, |v, _| v.model().is_expanded(child)));
+            cur = child;
+            depth += 1;
+        }
+        assert!(
+            depth > 1,
+            "the fixture starts with a long chain (O:\\DatenP\\…)"
+        );
+        let pos = tree.read_with(cx, |v, _| v.model().position(cur));
+        assert!(pos.is_some(), "the end of the chain is visible");
+        for &child in &t.node(cur).children {
+            assert!(tree.read_with(cx, |v, _| v.model().position(child).is_some()));
+        }
     }
 
     #[gpui::test]

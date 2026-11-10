@@ -43,9 +43,7 @@ without a planned step yet.
 | Addition | §5.2 Errors | `ReportError::kind()` returns the variant name used for the UI banner. |
 | Open | §5.8 | Known limitation kept as specified: renamed subfolders whose files are all `Moved` are not detected (documented in `identical.rs`, covered by a test). |
 
----
-
-## In this PR (PR #3 — GPUI shell and row table, plan steps 7–8)
+### PR #3 — GPUI shell, row table and review fixes (plan steps 7–8)
 
 | Type | Area | Deviation |
 |---|---|---|
@@ -68,3 +66,27 @@ without a planned step yet.
 | Change | §5.8 Performance (core) | The detector returns early when there is no Base/Second pair at all (e.g. single-source reports), and the "first paired file in subtree" search is memoised per folder, so the candidate search is linear instead of one subtree DFS per folder. |
 | Clarification | §4.1 / §5.4 Header | Header validation compares the **parsed** header fields joined with `;` (exactly the algorithm in §5.4 step 3), not the raw bytes. A quoted header field or a UTF-8 BOM (which the `csv` crate strips) is therefore accepted. Kept on purpose: such files are otherwise valid reports. |
 | Clarification | §5.9 Statuses | `compute_statuses` returns all `None` for an empty pair list, as specified ("no scan yet" → no dots). A completed scan that found nothing therefore looks like "not scanned" in the tree; the panel text in §7.6 covers both cases. If the UI should show all-red after an empty scan, step 11 tracks a "scan done" flag in `ReportStore` — no core change needed. |
+
+---
+
+## In this PR (PR #4 — folder tree, plan step 9)
+
+| Type | Area | Deviation |
+|---|---|---|
+| Clarification | §7.4 Flatten model location | The flattened list and expansion state live in the UI crate (`tree_view_model.rs`), not in `dupreport-core`: expansion and status-rank ordering are presentation state, the core stays report data only. The model is GPUI-free and unit-tested; the cached list is an `Arc<Vec<(FolderId, depth)>>`, rebuilt only on expand/collapse, new report or `set_ranks`. |
+| Clarification | §7.4 "Initially only the root is expanded" | Read as: the root's children are visible (rows: `/`, then its direct children), all deeper nodes collapsed — unless chain auto-expansion (next row) is on, which it is by default. |
+| Addition | §7.4 Auto-expand chains | Not in the brief (requested during review of this PR). Expanding a folder — and the initial root expansion of a new report — also expands its chain of pass-through folders: while the current folder has exactly one subfolder and that subfolder holds no files itself and is not a leaf, the subfolder is expanded too. The walk stops at the first folder that branches, holds files or is a leaf, so e.g. `O:\DatenP\Programmieren\repos\myDupFinder\testdata` opens in one step. Header checkbox "auto-expand chains" in the tree pane, default **on**, kept across reports but not persisted across app restarts; switching it only affects later expansions. Collapsing is unchanged (one folder). The tree header wraps its two checkboxes onto a second line when the pane is too narrow (down to the 160 px minimum). |
+| Clarification | §7.4 Sort hook | `TreeViewModel::set_ranks(tree, Option<Vec<u8>>)` takes a per-folder rank (lower first, stable, missing = 3) so step 11 can plug in green 0 / yellow 1 / red 2 / unknown 3. Nothing calls it yet (`expect(dead_code)`); no ordering by status is implemented. |
+| Deferred | §7.4 Status dots, green-on-top | Header checkbox "● green on top" is rendered, default checked, and **disabled** (no statuses exist yet); toggling has no effect. No status dots and no identical-folder logic → step 11. |
+| Clarification | §7.4 Keyboard | ↑/↓ move the selection over visible rows (clamped at both ends). → on a collapsed folder expands it (selection stays), on an expanded one moves to its first *displayed* child, on a leaf does nothing. ← on an expanded folder collapses it, otherwise moves to the parent (root: nothing). Enter/Space re-select the current row. Every selection move refilters the table, like a click. |
+| Clarification | §7.4 Hidden selection | If the selected folder gets hidden by collapsing an ancestor, the selection is kept; keyboard navigation then starts from its nearest visible ancestor. Collapsing does not move the selection. |
+| Clarification | §7.4 Leaf toggle | Only folders with children have a toggle handler (▸/▾ toggles without selecting). A leaf's `·` has none, so clicking it selects the row like any other part of the row. |
+| Addition | §7.4 Tree row tooltip | Non-root rows show the full folder path as tooltip (names are ellipsised). |
+| Addition | §7.4 Focus | The tree pane is a focusable key context (`FolderTree`); clicking a row or toggle focuses it. Key bindings are registered in `main.rs` (`bind_tree_keys`). Scrolling keeps the selected row visible (`ScrollStrategy::Nearest`); a new report scrolls to the top. |
+| Change | §7.2 Splitter implementation | Uses gpui-component's `h_resizable`/`resizable_panel` for hit testing, cursor and drag, but paints its own handle: 5 px line in `Palette::splitter`, `splitter_hover` while hovered or dragged (the design system's own hairline/pill is replaced). The handle's hit band stays gpui-component's 9 px (straddling the boundary). Text-selection suppression while dragging is not done explicitly. |
+| Clarification | §7.2 Splitter limits | Default 320 px, min 160 px; max is `window_width − 200` (never below 160), recomputed on every render from the viewport width. The tree panel is `fixed()`, so it keeps its width when the window is resized. The table panel uses gpui-component's default minimum (100 px). |
+| Change | §7.2 Pane layout without report | The split layout (tree pane + splitter + right pane) is always rendered; without a report the tree pane shows only its header and the placeholder text appears in the right pane (previously full width). |
+| Addition | §7.3 Toolbar | *descendants* checkbox (bound to `include_descendants`, default on, disabled without a report), placed before *hash column* as in the brief. |
+| Clarification | §6 Selection reset | A new report resets expansion to the root only, selection to the root and scrolls the tree to the top; this is done by the tree view noticing a different `Arc<Report>`, not by the store. |
+| Clarification | Code | `select_folder` / `set_include_descendants` / `Palette::{splitter, splitter_hover, row_selected}` lost their `expect(dead_code)`. Still pending: `Palette::status` (step 11), `TreeViewModel::{set_ranks, reveal}` (step 11), the text/hash/category/source setters (step 10). |
+| Open | Tests | Real mouse clicks (row select vs. toggle with `stop_propagation`) and key-binding dispatch are not covered by automated tests; the view's handlers (`select`, `toggle`, `press_*`) are tested directly. Manually verified on Windows: clicking focuses the tree, ↓/→ expand and select, the table refilters. |
