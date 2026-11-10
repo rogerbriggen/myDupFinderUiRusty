@@ -121,9 +121,7 @@ without a planned step yet.
 |---|---|---|
 | Change | §10.1 Binary artifacts | Revises PR #5: the release build and artifact upload are skipped on pull requests, so the Linux PR check takes about 1 minute again instead of about 6½. Binaries are still built and uploaded on pushes to `main` (Linux, Windows), on `v*` tags (all three OSes) and on manual runs (the ticked OSes); for a binary from a PR branch, start a manual run on that branch. |
 
----
-
-## In this PR (PR #8 — identical panel, status dots, green on top, plan step 11)
+### PR #8 — Identical panel, status dots, green on top (plan step 11)
 
 | Type | Area | Deviation |
 |---|---|---|
@@ -141,3 +139,14 @@ without a planned step yet.
 | Clarification | §7.6 Link target | A path without a node in the combined tree does nothing (cannot happen for pairs of the same report). A link to a folder that was already selected still reveals and scrolls to it. |
 | Clarification | Code | Removed the `expect(dead_code)` of `Palette::status` and `TreeViewModel::{set_ranks, reveal}`. All `ReportStore` fields and setters are now used. Several UI source files had CRLF line endings in the working tree and were normalised to LF (git's `autocrlf` makes no difference in the diff). |
 | Open | Tests | Real mouse clicks (toolbar button, panel links/rows, collapse button and bar, checkbox) and dragging the horizontal splitter are not covered; their handlers (`load_identical`, `activate_folder`, `set_collapsed`, `set_green_on_top`) are tested directly, and the layout renders in both panel states. The dot colour/tooltip rendering and the panel's pixel layout (ellipsis, alignment) are not asserted. Manually verified on Windows (light mode): the button scans the whole-lot fixture, the panel shows both pairs, the tree shows dots, clicking the `CheckDetail` link reveals and selects it (table shows its 4 rows), the collapse button collapses to the bar. Not checked in dark mode or with thousands of pairs. |
+
+---
+
+## In this PR (PR #10 — parity check, plan step 13)
+
+| Type | Area | Deviation |
+|---|---|---|
+| Change | §5.6 Child order | Children are sorted with an ICU4X collator at secondary strength (`icu_collator` 2, root locale), not with `to_lowercase()`. This matches the old UI's `localeCompare(…, {sensitivity: 'accent'})`: `Ärger` sorts next to `a` instead of after `z`, and `café` right after `cafe`. Names that compare equal (`Docs` / `docs`) keep the order in which they first occur in the report (stable sort, as in the old UI), not the brief's raw-string tie-break. If the collator cannot be created, the old lowercase order is used. Found by the parity check; see [`PARITY.md`](PARITY.md). |
+| Change | §11 Step 13 | The parity check compares logic, not two GUIs side by side. It runs the old app's own backend and Angular code (harness in `tools/parity`) against `dupreport-core`. It covers both fixtures plus ten synthetic reports, checking per-folder counts, child order, identical pairs, status dots and the filtered rows for up to 8315 UI states per report. All of them are equal. The GUI was verified by hand in steps 9–11. |
+| Clarification | §5.6 Mixed separators | A report that mixes `\` and `/` gives the old app one tree node with the first spelling's path, so its tree, dots and filter disagree. The new app keeps separate nodes. Not changed: myDupFinder writes one separator per report. |
+| Clarification | §5.7 Folder filter | With *include descendants*, a file whose path equals a sibling folder's path (`…\a\x` next to folder `…\a\x`) matched in the old app (`is_under_or_equal`). It does not match in the new tree-based filter. Not changed: this cannot happen on a real file system. |

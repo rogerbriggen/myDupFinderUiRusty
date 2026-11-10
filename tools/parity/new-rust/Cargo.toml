@@ -1,0 +1,13 @@
+[package]
+name = "parity-new"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Parity harness, NEW side: dupreport-core of this repo"
+
+[dependencies]
+dupreport-core = { path = "../../../crates/dupreport-core" }
+serde_json = "1"
+
+# Standalone: not part of the main workspace.
+[workspace]

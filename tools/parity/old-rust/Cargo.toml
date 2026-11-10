@@ -1,0 +1,15 @@
+[package]
+name = "parity-old"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Parity harness, OLD side: the unchanged backend modules of the old Tauri app"
+
+[dependencies]
+csv = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+# Standalone: not part of the main workspace.
+[workspace]
