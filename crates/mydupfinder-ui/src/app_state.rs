@@ -299,49 +299,65 @@ impl ReportStore {
     }
 }
 
+// Every setter is a no-op when the value does not change: a refilter would
+// produce a new `filtered` list and the table would scroll back to the top.
 impl ReportStore {
     /// Select a folder in the tree.
     pub fn select_folder(&mut self, folder: FolderId, cx: &mut Context<Self>) {
-        self.selected_folder = folder;
-        self.refilter(cx);
+        if self.selected_folder != folder {
+            self.selected_folder = folder;
+            self.refilter(cx);
+        }
     }
 
     /// Include or exclude rows of descendant folders.
     pub fn set_include_descendants(&mut self, on: bool, cx: &mut Context<Self>) {
-        self.include_descendants = on;
-        self.refilter(cx);
+        if self.include_descendants != on {
+            self.include_descendants = on;
+            self.refilter(cx);
+        }
     }
 
     /// Set the path / filename substring filter.
     pub fn set_text_filter(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
-        self.text_filter = text.into();
-        self.refilter(cx);
+        let text = text.into();
+        if self.text_filter != text {
+            self.text_filter = text;
+            self.refilter(cx);
+        }
     }
 
     /// Set the hash filter.
     pub fn set_hash_filter(&mut self, hash: impl Into<String>, cx: &mut Context<Self>) {
-        self.hash_filter = hash.into();
-        self.refilter(cx);
+        let hash = hash.into();
+        if self.hash_filter != hash {
+            self.hash_filter = hash;
+            self.refilter(cx);
+        }
     }
 
     /// Enable or disable one category (canonical order is kept by the set).
     pub fn set_category(&mut self, category: Category, on: bool, cx: &mut Context<Self>) {
-        if on {
-            self.categories.insert(category);
+        let changed = if on {
+            self.categories.insert(category)
         } else {
-            self.categories.remove(&category);
+            self.categories.remove(&category)
+        };
+        if changed {
+            self.refilter(cx);
         }
-        self.refilter(cx);
     }
 
     /// Enable or disable one source.
     pub fn set_source(&mut self, source: Source, on: bool, cx: &mut Context<Self>) {
-        if on {
-            self.sources.insert(source);
+        let changed = if on {
+            self.sources.insert(source)
         } else {
-            self.sources.remove(&source);
+            self.sources.remove(&source)
+        };
+        if changed {
+            self.refilter(cx);
         }
-        self.refilter(cx);
     }
 }
 

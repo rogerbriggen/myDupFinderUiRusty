@@ -305,3 +305,57 @@ fn keyboard_typing_into_path_filter(cx: &mut TestAppContext) {
     assert_eq!(input_value(&text, cx), "");
     assert_eq!(filtered_len(&f, cx), 64);
 }
+
+/// Ctrl+F while the *hash* input is focused. The input's more specific `Input`
+/// key context also binds Ctrl+F (to gpui-component's `Search`), but GPUI tries
+/// every matching binding in order: a single-line input does not handle
+/// `Search`, so `FocusFilter` runs next and the path filter gets the focus
+/// (typing then lands there, not in the hash input).
+#[gpui::test]
+fn ctrl_f_from_focused_hash_input_focuses_path_filter(cx: &mut TestAppContext) {
+    let (f, cx) = setup(cx);
+    open(&f, WHOLE_LOT, cx);
+    cx.update(|_, cx| {
+        cx.bind_keys([gpui::KeyBinding::new(
+            "ctrl-f",
+            crate::views::explorer::FocusFilter,
+            Some(crate::views::explorer::KEY_CONTEXT),
+        )])
+    });
+    let (text, hash) = inputs(&f, cx);
+    cx.update(|window, cx| hash.update(cx, |s, cx| s.focus(window, cx)));
+    cx.run_until_parked();
+    assert!(cx.update(|window, cx| {
+        gpui::Focusable::focus_handle(hash.read(cx), cx).is_focused(window)
+    }));
+    cx.simulate_keystrokes("ctrl-f");
+    cx.run_until_parked();
+    cx.simulate_input("check");
+    cx.run_until_parked();
+    assert_eq!(input_value(&text, cx), "check");
+    assert_eq!(input_value(&hash, cx), "");
+}
+
+/// Esc on an already empty filter (and any setter with an unchanged value)
+/// must not refilter: a new `filtered` list would scroll the table to the top.
+#[gpui::test]
+fn unchanged_filter_values_do_not_refilter(cx: &mut TestAppContext) {
+    let (f, cx) = setup(cx);
+    open(&f, WHOLE_LOT, cx);
+    let before = f.store.read_with(cx, |s, _| s.filtered.clone());
+    cx.update(|window, cx| {
+        f.toolbar.update(cx, |t, cx| {
+            t.clear_text_filter(window, cx);
+            t.clear_hash_filter(window, cx);
+        })
+    });
+    f.store.update(cx, |s, cx| {
+        s.set_category(Category::Duplicate, true, cx);
+        s.set_source(Source::Base, true, cx);
+        s.set_include_descendants(true, cx);
+        s.select_folder(s.selected_folder, cx);
+    });
+    cx.run_until_parked();
+    let after = f.store.read_with(cx, |s, _| s.filtered.clone());
+    assert!(std::sync::Arc::ptr_eq(&before, &after), "no refilter");
+}
