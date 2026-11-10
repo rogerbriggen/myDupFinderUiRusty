@@ -34,8 +34,9 @@ pub struct Palette {
     pub chip_on_border: Hsla,
     /// Border of a disabled (off) filter chip.
     pub chip_off_border: Hsla,
-    /// Identical-status dots: green, yellow, red.
-    #[expect(dead_code, reason = "used by the status dots (step 11)")]
+    /// Link text (identical panel folder links).
+    pub link: Hsla,
+    /// Identical-status dots, indexed by `IdenticalStatus::rank()`: green, yellow, red.
     pub status: [Hsla; 3],
     /// Category colours, indexed by `Category as usize`.
     category: [Hsla; 6],
@@ -79,6 +80,7 @@ impl Palette {
             chip_on_bg: rgb(0xe8f0ff).into(),
             chip_on_border: rgb(0x6796e1).into(),
             chip_off_border: rgb(0xcccccc).into(),
+            link: rgb(0x1565c0).into(),
             status: [
                 rgb(0x2ea043).into(),
                 rgb(0xd4a017).into(),
@@ -111,6 +113,7 @@ impl Palette {
             chip_on_bg: rgb(0x23324d).into(),
             chip_on_border: rgb(0x6796e1).into(),
             chip_off_border: rgb(0x555555).into(),
+            link: rgb(0x64b5f6).into(),
             status: [
                 rgb(0x3fb950).into(),
                 rgb(0xe3b341).into(),

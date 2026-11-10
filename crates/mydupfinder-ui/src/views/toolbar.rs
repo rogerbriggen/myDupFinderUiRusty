@@ -130,6 +130,19 @@ impl Toolbar {
     }
 }
 
+/// Label and disabled state of the *Identical folders* button (§7.3 item 10):
+/// "Scanning…" while a scan runs; disabled without a report or while scanning.
+pub(crate) fn identical_button(has_report: bool, scanning: bool) -> (&'static str, bool) {
+    (
+        if scanning {
+            "Scanning…"
+        } else {
+            "Identical folders"
+        },
+        !has_report || scanning,
+    )
+}
+
 /// A pill-shaped toggle chip: a checkbox with a label, filled and outlined in blue
 /// while on (§7.3).
 fn chip(
@@ -183,6 +196,8 @@ impl Render for Toolbar {
         let show_hash = store.show_hash;
         let include_descendants = store.include_descendants;
         let has_report = store.report.is_some();
+        let (identical_label, identical_disabled) =
+            identical_button(has_report, store.identical_loading);
         let source_chips = show_source_chips(store.report.as_deref());
         let categories = store.categories.clone();
         let sources = store.sources.clone();
@@ -315,6 +330,15 @@ impl Render for Toolbar {
                             )
                         }))
                     }),
+            )
+            // Last item (§7.3 item 10): starts the identical-folders scan.
+            .child(
+                Button::new("identical-folders")
+                    .label(identical_label)
+                    .disabled(identical_disabled)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.store.update(cx, |s, cx| s.load_identical(cx));
+                    })),
             )
     }
 }

@@ -23,8 +23,8 @@ pub const UNKNOWN_RANK: u8 = 3;
 pub struct TreeViewModel {
     expanded: HashSet<FolderId>,
     /// Optional sort rank per `FolderId` (lower first). `None` keeps the
-    /// alphabetical order of `FolderTree`. Step 11 plugs the identical-status
-    /// ranking (green 0, yellow 1, red 2, unknown 3) in here.
+    /// alphabetical order of `FolderTree`. The identical-status
+    /// ranking (green 0, yellow 1, red 2, unknown 3) is plugged in here.
     ranks: Option<Vec<u8>>,
     /// Whether expanding a folder also expands its single-subfolder chain.
     auto_expand_chains: bool,
@@ -127,11 +127,6 @@ impl TreeViewModel {
     /// Set (or clear) the per-folder sort rank and rebuild. `ranks[id]` is the
     /// rank of folder `id`; missing entries count as [`UNKNOWN_RANK`]. Equal
     /// ranks keep the alphabetical order (stable sort).
-    // Step 11 (status dots / green on top) is the first caller.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by green-on-top (step 11)")
-    )]
     pub fn set_ranks(&mut self, tree: &FolderTree, ranks: Option<Vec<u8>>) {
         self.ranks = ranks;
         self.rebuild(tree);
@@ -169,11 +164,6 @@ impl TreeViewModel {
     }
 
     /// Expand all ancestors of `id` so that it becomes visible.
-    // Step 11 (identical panel: "expand ancestors and scroll into view").
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by the identical panel (step 11)")
-    )]
     pub fn reveal(&mut self, tree: &FolderTree, id: FolderId) {
         let mut changed = false;
         let mut cur = tree.node(id).parent;
