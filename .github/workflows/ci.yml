@@ -5,8 +5,11 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
-  # Manual run on any branch (Actions tab → CI → "Run workflow", or
-  # `gh workflow run ci.yml --ref <branch> -f macos=true`). Pick the OSes.
+  # Manual run on any branch: Actions tab → CI → "Run workflow", tick the OSes.
+  # All three inputs default to true, so on the command line switch off the
+  # ones you do not want, e.g. macOS only:
+  #   gh workflow run ci.yml --ref <branch> -f linux=false -f windows=false
+  # (`-f macos=true` alone would still run all three.)
   workflow_dispatch:
     inputs:
       linux:
@@ -41,7 +44,9 @@ env:
 #
 # Every OS job uploads its release binary as a workflow artifact
 # (`mydupfinder-ui-<os>-<arch>`, kept 14 days). These are plain, unsigned
-# executables, not installers.
+# executables, not installers. Not on pull requests: the release build would
+# make the PR check about 5 minutes slower. Need a binary from a PR branch?
+# Start a manual run on that branch.
 #
 # TODO (step 12): add package jobs (cargo-packager: .deb/.AppImage, .exe/.msi,
 # .app/.dmg) that depend on these jobs, and a release job for `v*` tags using
@@ -78,8 +83,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      - run: cargo build --release --locked -p mydupfinder-ui
-      - uses: actions/upload-artifact@v7
+      # Binaries only for main, tags and manual runs - PR checks stay fast.
+      - if: github.event_name != 'pull_request'
+        run: cargo build --release --locked -p mydupfinder-ui
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
         with:
           name: mydupfinder-ui-linux-x64
           path: target/release/mydupfinder-ui
@@ -97,8 +105,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      - run: cargo build --release --locked -p mydupfinder-ui
-      - uses: actions/upload-artifact@v7
+      # Binaries only for main, tags and manual runs - PR checks stay fast.
+      - if: github.event_name != 'pull_request'
+        run: cargo build --release --locked -p mydupfinder-ui
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
         with:
           name: mydupfinder-ui-windows-x64
           path: target/release/mydupfinder-ui.exe
@@ -116,8 +127,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      - run: cargo build --release --locked -p mydupfinder-ui
-      - uses: actions/upload-artifact@v7
+      # Binaries only for main, tags and manual runs - PR checks stay fast.
+      - if: github.event_name != 'pull_request'
+        run: cargo build --release --locked -p mydupfinder-ui
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
         with:
           name: mydupfinder-ui-macos-arm64
           path: target/release/mydupfinder-ui
