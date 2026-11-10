@@ -51,6 +51,38 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 The first build compiles GPUI and takes several minutes.
 
+## Packaging & releases
+
+Installers are built with [cargo-packager](https://github.com/crabnebula-dev/cargo-packager);
+its configuration is in `crates/mydupfinder-ui/Cargo.toml`
+(`[package.metadata.packager]`). The Windows executable embeds the icon and
+version information through `build.rs` (`winresource`).
+
+Build a package locally (on the OS you package for):
+
+```sh
+cargo install cargo-packager --locked --version 0.11.8
+cargo packager --release -p mydupfinder-ui --formats nsis       # Windows: setup .exe
+cargo packager --release -p mydupfinder-ui --formats deb,appimage  # Linux
+cargo packager --release -p mydupfinder-ui --formats dmg        # macOS
+```
+
+The results land in `target/packager/`. cargo-packager downloads the tools it
+needs (NSIS, linuxdeploy) itself.
+
+CI (`.github/workflows/ci.yml`): outside pull requests, every OS whose test
+job runs also gets a package job after it: Linux and Windows on pushes to
+`main`, all three OSes on `v*` tags, and the ticked OSes on manual runs
+(Actions tab, "Run workflow"). macOS is not packaged on `main`.
+The installers are workflow artifacts named
+`mydupfinder-ui-<os>-packages` (kept 14 days). Pull requests only run the tests.
+
+**Release:** set the version in the workspace `Cargo.toml`, merge it, then push
+a tag `vX.Y.Z` that matches it exactly (for example `git tag v0.1.0 && git push origin v0.1.0`).
+The release job refuses a tag that differs from the Cargo version and otherwise
+publishes a GitHub Release with the installers attached and generated notes.
+The installers are not code-signed.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
