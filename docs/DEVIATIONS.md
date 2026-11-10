@@ -69,7 +69,7 @@ without a planned step yet.
 
 ---
 
-## In this PR (PR #4 — folder tree, plan step 9)
+### PR #4 — Folder tree, chain auto-expansion (plan step 9)
 
 | Type | Area | Deviation |
 |---|---|---|
@@ -90,3 +90,23 @@ without a planned step yet.
 | Clarification | §6 Selection reset | A new report resets expansion to the root only, selection to the root and scrolls the tree to the top; this is done by the tree view noticing a different `Arc<Report>`, not by the store. |
 | Clarification | Code | `select_folder` / `set_include_descendants` / `Palette::{splitter, splitter_hover, row_selected}` lost their `expect(dead_code)`. Still pending: `Palette::status` (step 11), `TreeViewModel::{set_ranks, reveal}` (step 11), the text/hash/category/source setters (step 10). |
 | Open | Tests | Real mouse clicks (row select vs. toggle with `stop_propagation`) and key-binding dispatch are not covered by automated tests; the view's handlers (`select`, `toggle`, `press_*`) are tested directly. Manually verified on Windows: clicking focuses the tree, ↓/→ expand and select, the table refilters. |
+
+---
+
+## In this PR (PR #6 — toolbar filters, plan step 10)
+
+| Type | Area | Deviation |
+|---|---|---|
+| Clarification | §6 / §7.3 Filter persistence | Opening another report resets only the sources (as in §6). The text filter, hash filter, categories, *descendants* and *hash column* are kept, so the user can apply the same filter to several reports. The toolbar's inputs are re-synced from the store on every store change (`set_value` emits no change event, so there is no feedback loop); a value set by anything but typing is therefore always shown. |
+| Clarification | §7.3 Filter input | The store keeps the text as typed (untrimmed) and trims it when building the query, so the input never rewrites what the user types. |
+| Change | §8 Debounce | The text/hash inputs call the store on every change without the ~100 ms debounce mentioned in §8: sync filtering of < 50k rows is a few ms, and larger reports are already filtered in the background with a generation counter that drops stale results. A debounce can be added if 200k-row reports feel laggy. |
+| Clarification | §7.3 Esc | `Esc` is handled by a wrapper around each filter input: the input does not consume it (`clean_on_escape` is off), it bubbles to the wrapper, which empties the input and the store filter (only the focused input's filter is cleared). It does not move focus away from the input. Esc outside the inputs (e.g. in the folder tree) is not bound, so the tree's key handling is unchanged. |
+| Clarification | §7.3 Ctrl/Cmd+F | New action `FocusFilter`, bound in the `Explorer` key context like `OpenReport`; focuses the path filter and does nothing while no report is open (the input is disabled then). |
+| Addition | §7.3 Dark-mode chips | The brief only gives the light colours. Light: fill `#e8f0ff`, border `#6796e1` (off: `#ccc`). Dark: fill `#23324d`, border `#6796e1`, off border `#555`. All three are `Palette` fields (`chip_on_bg`, `chip_on_border`, `chip_off_border`). |
+| Clarification | §7.3 Chips | A chip is a pill-shaped `div` around gpui-component's `Checkbox` + label. Only the checkbox and its label are clickable, not the whole pill's padding. Chip text uses the default colour (not the category colour). Disabled (no report) chips use the checkbox's disabled style; the pill border/fill still reflects the stored state. |
+| Clarification | §7.3 Source chips | Shown only for a report with `has_second_source`; a report with only a Base source shows none, so its `sources` stay `{Base}`. |
+| Clarification | §7.3 Inputs | Fixed 200 px wide, gpui-component `Input` at `Size::Small` with 12 px text; the hash input uses the theme's monospace family (`Theme::mono_font_family`). The inputs have no clear (×) button, Esc is the only clear affordance. |
+| Clarification | §7.3 Layout | Controls wrap. The category and source chips form one group with `margin-left: auto` (the flexible spacer): the group moves to the next toolbar line as a whole instead of chip by chip, stays right-aligned there, and only wraps internally when a full line is too narrow. |
+| Clarification | Code | The `expect(dead_code)` on the text/hash/category/source setters was removed. Still pending: `Palette::status`, `TreeViewModel::{set_ranks, reveal}` (step 11). |
+| Deferred | §7.3 | *Identical folders* button → step 11. |
+| Open | Tests | Mouse clicks on chips are not covered by automated tests (their handlers are the tested store setters). Key handling is: `keyboard_typing_into_path_filter` sends real keystrokes (Ctrl+F, typed text, Esc) through GPUI's test platform. Manually verified on Windows: Ctrl+F focuses the path filter, typing `check` filters to 25 rows, chip group layout in light mode. Dark mode not checked visually. |

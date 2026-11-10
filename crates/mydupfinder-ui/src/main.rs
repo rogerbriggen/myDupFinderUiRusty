@@ -4,6 +4,8 @@
 
 mod app_state;
 mod theme;
+#[cfg(test)]
+mod toolbar_tests;
 mod tree_view_model;
 mod views;
 
@@ -13,8 +15,15 @@ use gpui::{
     App, AppContext, Bounds, KeyBinding, TitlebarOptions, WindowBounds, WindowOptions, px, size,
 };
 use gpui_component::Root;
-use views::explorer::{Explorer, KEY_CONTEXT, OpenReport};
+use views::explorer::{Explorer, FocusFilter, KEY_CONTEXT, OpenReport};
 use views::folder_tree;
+
+/// Ctrl+F everywhere except macOS, where it is Cmd+F.
+const FIND_KEYSTROKE: &str = if cfg!(target_os = "macos") {
+    "cmd-f"
+} else {
+    "ctrl-f"
+};
 
 const WINDOW_TITLE: &str = "myDupFinder UI";
 
@@ -44,11 +53,10 @@ fn main() {
 
     gpui_platform::application().run(move |cx: &mut App| {
         gpui_component::init(cx);
-        cx.bind_keys([KeyBinding::new(
-            OPEN_KEYSTROKE,
-            OpenReport,
-            Some(KEY_CONTEXT),
-        )]);
+        cx.bind_keys([
+            KeyBinding::new(OPEN_KEYSTROKE, OpenReport, Some(KEY_CONTEXT)),
+            KeyBinding::new(FIND_KEYSTROKE, FocusFilter, Some(KEY_CONTEXT)),
+        ]);
         bind_tree_keys(cx);
 
         let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);

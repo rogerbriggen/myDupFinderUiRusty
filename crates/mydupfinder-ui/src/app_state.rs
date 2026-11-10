@@ -299,8 +299,6 @@ impl ReportStore {
     }
 }
 
-// The folder-tree setters are wired (step 9); the filter setters below
-// are used by the toolbar in step 10 and until then only by the tests.
 impl ReportStore {
     /// Select a folder in the tree.
     pub fn select_folder(&mut self, folder: FolderId, cx: &mut Context<Self>) {
@@ -315,21 +313,18 @@ impl ReportStore {
     }
 
     /// Set the path / filename substring filter.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the toolbar (step 10)"))]
     pub fn set_text_filter(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
         self.text_filter = text.into();
         self.refilter(cx);
     }
 
     /// Set the hash filter.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the toolbar (step 10)"))]
     pub fn set_hash_filter(&mut self, hash: impl Into<String>, cx: &mut Context<Self>) {
         self.hash_filter = hash.into();
         self.refilter(cx);
     }
 
     /// Enable or disable one category (canonical order is kept by the set).
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the toolbar (step 10)"))]
     pub fn set_category(&mut self, category: Category, on: bool, cx: &mut Context<Self>) {
         if on {
             self.categories.insert(category);
@@ -340,7 +335,6 @@ impl ReportStore {
     }
 
     /// Enable or disable one source.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the toolbar (step 10)"))]
     pub fn set_source(&mut self, source: Source, on: bool, cx: &mut Context<Self>) {
         if on {
             self.sources.insert(source);
