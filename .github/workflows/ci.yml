@@ -5,8 +5,11 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
-  # Manual run on any branch (Actions tab → CI → "Run workflow", or
-  # `gh workflow run ci.yml --ref <branch> -f macos=true`). Pick the OSes.
+  # Manual run on any branch: Actions tab → CI → "Run workflow", tick the OSes.
+  # All three inputs default to true, so on the command line switch off the
+  # ones you do not want, e.g. macOS only:
+  #   gh workflow run ci.yml --ref <branch> -f linux=false -f windows=false
+  # (`-f macos=true` alone would still run all three.)
   workflow_dispatch:
     inputs:
       linux:
