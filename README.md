@@ -70,9 +70,11 @@ cargo packager --release -p mydupfinder-ui --formats dmg        # macOS
 The results land in `target/packager/`. cargo-packager downloads the tools it
 needs (NSIS, linuxdeploy) itself.
 
-CI (`.github/workflows/ci.yml`): every push to `main`, every `v*` tag and every
-manual run (Actions tab, "Run workflow") also runs a package job per OS after
-its test job; the installers are workflow artifacts named
+CI (`.github/workflows/ci.yml`): outside pull requests, every OS whose test
+job runs also gets a package job after it: Linux and Windows on pushes to
+`main`, all three OSes on `v*` tags, and the ticked OSes on manual runs
+(Actions tab, "Run workflow"). macOS is not packaged on `main`.
+The installers are workflow artifacts named
 `mydupfinder-ui-<os>-packages` (kept 14 days). Pull requests only run the tests.
 
 **Release:** set the version in the workspace `Cargo.toml`, merge it, then push

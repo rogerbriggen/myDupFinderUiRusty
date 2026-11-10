@@ -173,6 +173,10 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends file
           sudo apt-get install -y --no-install-recommends libfuse2t64 || sudo apt-get install -y --no-install-recommends libfuse2
+      # rust-cache first: post steps run in reverse order, and its cleanup
+      # deletes bin/ entries that existed before it ran, so it must not see
+      # cargo-packager as pre-existing before actions/cache saves it.
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/cache@v6
         id: packager-cache
         with:
@@ -180,7 +184,6 @@ jobs:
           key: cargo-packager-0.11.8-${{ runner.os }}-${{ runner.arch }}
       - if: steps.packager-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-packager --locked --version 0.11.8
-      - uses: Swatinem/rust-cache@v2
       # The before-packaging command in crates/mydupfinder-ui/Cargo.toml builds
       # the release binary first.
       - run: cargo packager --release -p mydupfinder-ui --formats deb,appimage
@@ -202,6 +205,10 @@ jobs:
       - uses: actions/checkout@v7
       # Installs the toolchain + components pinned in rust-toolchain.toml.
       - run: rustup toolchain install
+      # rust-cache first: post steps run in reverse order, and its cleanup
+      # deletes bin/ entries that existed before it ran, so it must not see
+      # cargo-packager as pre-existing before actions/cache saves it.
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/cache@v6
         id: packager-cache
         with:
@@ -209,7 +216,6 @@ jobs:
           key: cargo-packager-0.11.8-${{ runner.os }}-${{ runner.arch }}
       - if: steps.packager-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-packager --locked --version 0.11.8
-      - uses: Swatinem/rust-cache@v2
       # NSIS is downloaded by cargo-packager itself (no NSIS/WiX install needed).
       - run: cargo packager --release -p mydupfinder-ui --formats nsis
       - uses: actions/upload-artifact@v7
@@ -229,6 +235,10 @@ jobs:
       - uses: actions/checkout@v7
       # Installs the toolchain + components pinned in rust-toolchain.toml.
       - run: rustup toolchain install
+      # rust-cache first: post steps run in reverse order, and its cleanup
+      # deletes bin/ entries that existed before it ran, so it must not see
+      # cargo-packager as pre-existing before actions/cache saves it.
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/cache@v6
         id: packager-cache
         with:
@@ -236,7 +246,6 @@ jobs:
           key: cargo-packager-0.11.8-${{ runner.os }}-${{ runner.arch }}
       - if: steps.packager-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-packager --locked --version 0.11.8
-      - uses: Swatinem/rust-cache@v2
       # The dmg format builds the .app first and wraps it.
       - run: cargo packager --release -p mydupfinder-ui --formats dmg
       - uses: actions/upload-artifact@v7
@@ -249,7 +258,7 @@ jobs:
 
   release:
     name: GitHub Release
-    needs: [package-linux, package-windows, package-macos]
+    needs: [fmt, package-linux, package-windows, package-macos]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
