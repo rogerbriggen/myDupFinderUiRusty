@@ -228,12 +228,16 @@ impl FolderTreeView {
                             .w(px(16.))
                             .text_center()
                             .child(glyph)
-                            // Toggle only: the click must not reach the row (select).
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                window.focus(&this.focus, cx);
-                                this.toggle(id, cx);
-                                cx.stop_propagation();
-                            })),
+                            // Toggle only: the click must not reach the row
+                            // (select). A leaf's `·` has no handler, so its
+                            // click falls through and selects the row.
+                            .when(has_children, |d| {
+                                d.on_click(cx.listener(move |this, _, window, cx| {
+                                    window.focus(&this.focus, cx);
+                                    this.toggle(id, cx);
+                                    cx.stop_propagation();
+                                }))
+                            }),
                     )
                     .child(
                         div()
@@ -295,10 +299,14 @@ impl Render for FolderTreeView {
                 div()
                     .flex_none()
                     .flex()
+                    // Wraps onto a second line when the pane is narrow (min 160 px).
+                    .flex_wrap()
                     .items_center()
-                    .h(px(ROW_HEIGHT + 6.))
+                    .min_h(px(ROW_HEIGHT + 6.))
                     .px_2()
-                    .gap(px(12.))
+                    .py_1()
+                    .gap_x(px(12.))
+                    .gap_y(px(4.))
                     .bg(palette.surface)
                     .border_b_1()
                     .border_color(palette.border)
