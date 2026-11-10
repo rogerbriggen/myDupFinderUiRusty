@@ -48,6 +48,8 @@ pub struct FolderTreeView {
     focus: FocusHandle,
     /// Selection the list was last scrolled to; a different one scrolls it into view.
     scrolled_to: Option<FolderId>,
+    /// "auto-expand chains" setting; survives report changes (the model does not).
+    auto_expand_chains: bool,
     /// State of the "green on top" checkbox. Has no effect before step 11.
     green_on_top: bool,
     _store_subscription: Subscription,
@@ -67,6 +69,7 @@ impl FolderTreeView {
             scroll: UniformListScrollHandle::new(),
             focus: cx.focus_handle(),
             scrolled_to: None,
+            auto_expand_chains: true,
             green_on_top: true,
             _store_subscription: subscription,
         };
@@ -97,9 +100,9 @@ impl FolderTreeView {
         if same {
             return;
         }
-        self.model = current
-            .as_ref()
-            .map_or_else(TreeViewModel::empty, |r| TreeViewModel::new(&r.tree));
+        self.model = current.as_ref().map_or_else(TreeViewModel::empty, |r| {
+            TreeViewModel::new(&r.tree, self.auto_expand_chains)
+        });
         self.report = current;
         self.scrolled_to = None;
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
@@ -114,6 +117,13 @@ impl FolderTreeView {
         if self.selected(cx) != id {
             self.store.update(cx, |s, cx| s.select_folder(id, cx));
         }
+        cx.notify();
+    }
+
+    /// Turn chain auto-expansion on or off for this and every later report.
+    pub(crate) fn set_auto_expand_chains(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.auto_expand_chains = on;
+        self.model.set_auto_expand_chains(on);
         cx.notify();
     }
 
@@ -288,6 +298,7 @@ impl Render for FolderTreeView {
                     .items_center()
                     .h(px(ROW_HEIGHT + 6.))
                     .px_2()
+                    .gap(px(12.))
                     .bg(palette.surface)
                     .border_b_1()
                     .border_color(palette.border)
@@ -299,6 +310,17 @@ impl Render for FolderTreeView {
                             .on_click(cx.listener(|this, checked: &bool, _, cx| {
                                 this.green_on_top = *checked;
                                 cx.notify();
+                            })),
+                    )
+                    .child(
+                        Checkbox::new("auto-expand-chains")
+                            .label("auto-expand chains")
+                            .checked(self.auto_expand_chains)
+                            .tooltip(
+                                "Expanding a folder also expands its chain of single subfolders",
+                            )
+                            .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                                this.set_auto_expand_chains(*checked, cx);
                             })),
                     ),
             )

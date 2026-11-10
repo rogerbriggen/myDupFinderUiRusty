@@ -155,6 +155,8 @@ mod tests {
         let tree = view.read_with(cx, |e, _| e.tree.clone());
         draw(cx);
         assert!(tree.read_with(cx, |t, _| t.model().rows().is_empty()));
+        // One level per expansion; chain auto-expansion is covered separately.
+        tree.update(cx, |t, cx| t.set_auto_expand_chains(false, cx));
 
         store.update(cx, |s, cx| s.open_report(PathBuf::from(WHOLE_LOT), cx));
         cx.run_until_parked();
@@ -200,6 +202,48 @@ mod tests {
         draw(cx);
         assert_eq!(visible(cx).len(), 1 + root_children.len());
         assert_eq!(store.read_with(cx, |s, _| s.selected_folder), ROOT);
+    }
+
+    #[gpui::test]
+    fn new_report_auto_expands_the_root_chain(cx: &mut TestAppContext) {
+        use dupreport_core::ROOT;
+
+        cx.update(gpui_component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| Explorer::new(None, window, cx));
+        let store = view.read_with(cx, |e, _| e.store.clone());
+        let tree = view.read_with(cx, |e, _| e.tree.clone());
+        assert!(
+            tree.read_with(cx, |t, _| t.model().auto_expand_chains()),
+            "on by default"
+        );
+        store.update(cx, |s, cx| s.open_report(PathBuf::from(WHOLE_LOT), cx));
+        cx.run_until_parked();
+        draw(cx);
+        let report = store.read_with(cx, |s, _| s.report.clone().unwrap());
+        let t = &report.tree;
+
+        // Follow the chain from the root: every pass-through folder is expanded,
+        // and the walk ends at a folder that branches, holds files or is a leaf.
+        let mut cur = ROOT;
+        let mut depth = 0;
+        while let &[child] = t.node(cur).children.as_slice() {
+            let next = t.node(child);
+            if next.direct_file_count > 0 || next.children.is_empty() {
+                break;
+            }
+            assert!(tree.read_with(cx, |v, _| v.model().is_expanded(child)));
+            cur = child;
+            depth += 1;
+        }
+        assert!(
+            depth > 1,
+            "the fixture starts with a long chain (O:\\DatenP\\…)"
+        );
+        let pos = tree.read_with(cx, |v, _| v.model().position(cur));
+        assert!(pos.is_some(), "the end of the chain is visible");
+        for &child in &t.node(cur).children {
+            assert!(tree.read_with(cx, |v, _| v.model().position(child).is_some()));
+        }
     }
 
     #[gpui::test]

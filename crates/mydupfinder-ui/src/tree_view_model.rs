@@ -26,38 +26,78 @@ pub struct TreeViewModel {
     /// alphabetical order of `FolderTree`. Step 11 plugs the identical-status
     /// ranking (green 0, yellow 1, red 2, unknown 3) in here.
     ranks: Option<Vec<u8>>,
+    /// Whether expanding a folder also expands its single-subfolder chain.
+    auto_expand_chains: bool,
     flat: Arc<Vec<FlatRow>>,
 }
 
 impl TreeViewModel {
-    /// A model for `tree` with only the root expanded.
+    /// A model for `tree` with only the root expanded (plus the root's chain
+    /// when `auto_expand_chains` is on, see [`Self::set_auto_expand_chains`]).
     #[must_use]
-    pub fn new(tree: &FolderTree) -> Self {
-        let mut model = Self {
-            expanded: HashSet::new(),
-            ranks: None,
-            flat: Arc::new(Vec::new()),
-        };
+    pub fn new(tree: &FolderTree, auto_expand_chains: bool) -> Self {
+        let mut model = Self::empty();
+        model.auto_expand_chains = auto_expand_chains;
         model.reset(tree);
         model
     }
 
-    /// An empty model (no report).
+    /// An empty model (no report). Chain auto-expansion is on.
     #[must_use]
     pub fn empty() -> Self {
         Self {
             expanded: HashSet::new(),
             ranks: None,
+            auto_expand_chains: true,
             flat: Arc::new(Vec::new()),
         }
     }
 
-    /// Collapse everything except the root and drop any ranking (new report).
+    /// Collapse everything except the root (and the root's chain when
+    /// auto-expansion is on) and drop any ranking (new report).
     pub fn reset(&mut self, tree: &FolderTree) {
         self.expanded.clear();
         self.expanded.insert(ROOT);
+        if self.auto_expand_chains {
+            self.expand_chain(tree, ROOT);
+        }
         self.ranks = None;
         self.rebuild(tree);
+    }
+
+    /// Whether expanding a folder also expands its single-subfolder chain.
+    #[cfg(test)]
+    #[must_use]
+    pub fn auto_expand_chains(&self) -> bool {
+        self.auto_expand_chains
+    }
+
+    /// Turn chain auto-expansion on or off. Only later expansions are
+    /// affected; the current expansion state is kept.
+    pub fn set_auto_expand_chains(&mut self, on: bool) {
+        self.auto_expand_chains = on;
+    }
+
+    /// Below the (already expanded) `id`, expand a chain of pass-through
+    /// folders: while the current folder has exactly one subfolder, and that
+    /// subfolder holds no files itself and has subfolders of its own, the
+    /// subfolder is expanded too. The walk stops at the first folder that
+    /// branches, holds files or is a leaf; that folder stays visible but
+    /// collapsed (or, if it branches, expanded by the previous step), so the
+    /// first "interesting" level becomes visible in one step.
+    fn expand_chain(&mut self, tree: &FolderTree, id: FolderId) {
+        let mut cur = id;
+        loop {
+            let &[child] = tree.node(cur).children.as_slice() else {
+                return;
+            };
+            let next = tree.node(child);
+            if next.direct_file_count > 0 || next.children.is_empty() {
+                return;
+            }
+            self.expanded.insert(child);
+            cur = child;
+        }
     }
 
     /// Cheap shared handle on the visible rows, for use inside list callbacks.
@@ -97,10 +137,14 @@ impl TreeViewModel {
         self.rebuild(tree);
     }
 
-    /// Expand `id`. Returns `true` when something changed (leaves never expand).
+    /// Expand `id` (and its chain when auto-expansion is on). Returns `true`
+    /// when something changed (leaves never expand).
     pub fn expand(&mut self, tree: &FolderTree, id: FolderId) -> bool {
         if tree.node(id).children.is_empty() || !self.expanded.insert(id) {
             return false;
+        }
+        if self.auto_expand_chains {
+            self.expand_chain(tree, id);
         }
         self.rebuild(tree);
         true
@@ -278,7 +322,7 @@ mod tests {
     #[test]
     fn initially_root_and_its_children_are_visible() {
         let (t, [c, d, ..]) = sample();
-        let m = TreeViewModel::new(&t);
+        let m = TreeViewModel::new(&t, false);
         assert_eq!(m.rows(), &[(ROOT, 0), (c, 1), (d, 1)]);
         assert!(m.is_expanded(ROOT));
         assert!(!m.is_expanded(c));
@@ -292,7 +336,7 @@ mod tests {
     #[test]
     fn expand_and_collapse_children_in_case_insensitive_order() {
         let (t, [c, d, alpha, beta, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         assert!(m.expand(&t, c));
         // "alpha" < "Beta" case-insensitively although 'B' < 'a' in ASCII.
         assert_eq!(
@@ -308,7 +352,7 @@ mod tests {
     #[test]
     fn collapse_hides_the_whole_subtree_but_keeps_inner_expansion() {
         let (t, [c, d, alpha, beta, sub, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         m.expand(&t, c);
         m.expand(&t, alpha);
         assert_eq!(visible(&m), [ROOT, c, alpha, sub, beta, d]);
@@ -321,7 +365,7 @@ mod tests {
     #[test]
     fn toggling_a_leaf_is_a_no_op() {
         let (t, [c, _, _, beta, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         m.expand(&t, c);
         let before = m.rows().to_vec();
         assert!(!m.toggle(&t, beta));
@@ -334,7 +378,7 @@ mod tests {
     #[test]
     fn up_and_down_clamp_at_the_ends() {
         let (t, [c, d, ..]) = sample();
-        let m = TreeViewModel::new(&t);
+        let m = TreeViewModel::new(&t, false);
         assert_eq!(m.select_prev(&t, ROOT), ROOT);
         assert_eq!(m.select_next(&t, ROOT), c);
         assert_eq!(m.select_next(&t, c), d);
@@ -346,7 +390,7 @@ mod tests {
     #[test]
     fn right_expands_then_moves_to_first_child_then_stops_at_leaf() {
         let (t, [c, _, alpha, beta, sub, deep, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         assert_eq!(m.key_right(&t, c), c, "first press expands");
         assert!(m.is_expanded(c));
         assert_eq!(
@@ -364,7 +408,7 @@ mod tests {
     #[test]
     fn left_collapses_then_moves_to_parent_root_stays() {
         let (t, [c, _, alpha, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         m.expand(&t, c);
         m.expand(&t, alpha);
         assert_eq!(m.key_left(&t, alpha), alpha, "collapses first");
@@ -381,7 +425,7 @@ mod tests {
     #[test]
     fn hidden_selection_navigates_from_its_visible_ancestor() {
         let (t, [c, d, alpha, _, sub, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         m.expand(&t, c);
         m.expand(&t, alpha);
         m.collapse(&t, c); // `sub` and `alpha` are now hidden
@@ -393,7 +437,7 @@ mod tests {
     #[test]
     fn reveal_expands_all_ancestors() {
         let (t, [c, _, alpha, _, sub, deep, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         m.reveal(&t, deep);
         assert!(m.is_expanded(c) && m.is_expanded(alpha) && m.is_expanded(sub));
         assert!(m.position(deep).is_some());
@@ -402,7 +446,7 @@ mod tests {
     #[test]
     fn reset_collapses_everything_but_the_root() {
         let (t, [c, d, alpha, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         m.expand(&t, c);
         m.expand(&t, alpha);
         m.reset(&t);
@@ -412,7 +456,7 @@ mod tests {
     #[test]
     fn ranks_reorder_children_stably() {
         let (t, [c, d, alpha, beta, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         m.expand(&t, c);
         let mut ranks = vec![UNKNOWN_RANK; t.nodes.len()];
         ranks[d as usize] = 0;
@@ -426,11 +470,87 @@ mod tests {
     #[test]
     fn right_on_expanded_folder_follows_displayed_order() {
         let (t, [c, _, _, beta, ..]) = sample();
-        let mut m = TreeViewModel::new(&t);
+        let mut m = TreeViewModel::new(&t, false);
         m.expand(&t, c);
         let mut ranks = vec![UNKNOWN_RANK; t.nodes.len()];
         ranks[beta as usize] = 0;
         m.set_ranks(&t, Some(ranks));
         assert_eq!(m.key_right(&t, c), beta);
+    }
+
+    /// root -> `O:` -> a -> b (holds a file) -> c -> {x, y}.
+    fn chain() -> (FolderTree, [FolderId; 6]) {
+        let rows = [
+            row(r"O:\a\b\f.txt"),
+            row(r"O:\a\b\c\x\g.txt"),
+            row(r"O:\a\b\c\y\h.txt"),
+        ];
+        let t = FolderTree::from_rows(&rows);
+        let id = |p: &str| t.find(p).unwrap();
+        let ids = [
+            id("O:"),
+            id(r"O:\a"),
+            id(r"O:\a\b"),
+            id(r"O:\a\b\c"),
+            id(r"O:\a\b\c\x"),
+            id(r"O:\a\b\c\y"),
+        ];
+        (t, ids)
+    }
+
+    #[test]
+    fn reset_expands_the_root_chain_down_to_a_folder_with_files() {
+        let (t, [o, a, b, c, ..]) = chain();
+        let m = TreeViewModel::new(&t, true);
+        assert_eq!(visible(&m), [ROOT, o, a, b]);
+        assert!(m.is_expanded(o) && m.is_expanded(a));
+        assert!(!m.is_expanded(b), "b holds files: the walk stops at it");
+        assert_eq!(m.position(c), None);
+    }
+
+    #[test]
+    fn expanding_continues_through_the_chain_until_it_branches() {
+        let (t, [o, a, b, c, x, y]) = chain();
+        let mut m = TreeViewModel::new(&t, true);
+        // b itself holds files, but its only subfolder c does not: c is
+        // expanded too, and c branches, so x and y become visible.
+        assert!(m.expand(&t, b));
+        assert!(m.is_expanded(c));
+        assert_eq!(visible(&m), [ROOT, o, a, b, c, x, y]);
+
+        // Collapsed chain links are expanded again by expanding the top.
+        m.collapse(&t, a);
+        m.collapse(&t, o);
+        assert_eq!(visible(&m), [ROOT, o]);
+        assert!(m.expand(&t, o));
+        assert_eq!(visible(&m), [ROOT, o, a, b, c, x, y]);
+    }
+
+    #[test]
+    fn chain_stops_before_a_leaf() {
+        let t = FolderTree::from_rows(&[row(r"O:\a\leaf\f.txt")]);
+        let id = |p: &str| t.find(p).unwrap();
+        let (o, a, leaf) = (id("O:"), id(r"O:\a"), id(r"O:\a\leaf"));
+        let m = TreeViewModel::new(&t, true);
+        assert_eq!(visible(&m), [ROOT, o, a, leaf]);
+        assert!(m.is_expanded(a));
+        assert!(!m.is_expanded(leaf));
+    }
+
+    #[test]
+    fn auto_expansion_off_expands_one_level_and_can_be_switched_on() {
+        let (t, [o, a, b, ..]) = chain();
+        let mut m = TreeViewModel::new(&t, false);
+        assert!(!m.auto_expand_chains());
+        assert_eq!(visible(&m), [ROOT, o]);
+        m.expand(&t, o);
+        assert_eq!(visible(&m), [ROOT, o, a]);
+
+        m.set_auto_expand_chains(true);
+        assert!(m.auto_expand_chains());
+        assert_eq!(visible(&m), [ROOT, o, a], "switching on keeps the state");
+        m.collapse(&t, o);
+        m.expand(&t, o);
+        assert_eq!(visible(&m), [ROOT, o, a, b]);
     }
 }
