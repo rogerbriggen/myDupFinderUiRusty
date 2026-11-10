@@ -82,7 +82,7 @@ pub struct Explorer {
     pub(crate) store: Entity<ReportStore>,
     pub(crate) toolbar: Entity<Toolbar>,
     pub(crate) tree: Entity<FolderTreeView>,
-    table: Entity<RowTable>,
+    pub(crate) table: Entity<RowTable>,
     pub(crate) identical: Entity<IdenticalPanel>,
     focus: FocusHandle,
     _appearance_subscription: Subscription,

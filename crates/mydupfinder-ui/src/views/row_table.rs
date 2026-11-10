@@ -5,10 +5,10 @@ use std::sync::Arc;
 use dupreport_core::{Row, RowIdx, format::format_hash_short, format::format_size};
 use gpui::{
     ClipboardItem, Context, Div, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    ScrollStrategy, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    ScrollHandle, ScrollStrategy, SharedString, StatefulInteractiveElement, Styled, Subscription,
     UniformListScrollHandle, Window, div, prelude::FluentBuilder, px, uniform_list,
 };
-use gpui_component::tooltip::Tooltip;
+use gpui_component::{scroll::ScrollableElement, tooltip::Tooltip};
 
 use crate::app_state::ReportStore;
 use crate::theme::Palette;
@@ -43,6 +43,13 @@ fn sized<E: Styled>(mut cell: E, col: Col) -> E {
         Col::Group => cell = cell.w(px(70.)).flex_none().text_right(),
     }
     cell
+}
+
+/// Width at which every column has its minimum width (§7.5): Folder 160 +
+/// Filename 140 + Size 90 + Category 100 + Source 80 + Group 70, plus Hash 130.
+/// A narrower pane scrolls the table horizontally instead of clipping columns.
+pub fn min_table_width(show_hash: bool) -> f32 {
+    160. + 140. + 90. + 100. + 80. + 70. + if show_hash { 130. } else { 0. }
 }
 
 fn text_cell<E: Styled>(cell: E, col: Col) -> E {
@@ -158,6 +165,8 @@ fn body_row(ix: usize, row: &Row, show_hash: bool, palette: Palette) -> impl Int
 pub struct RowTable {
     store: Entity<ReportStore>,
     scroll: UniformListScrollHandle,
+    /// Horizontal scroll position shared by header and body.
+    hscroll: ScrollHandle,
     /// The `filtered` vector the list was last rendered with; a different one
     /// resets the scroll position so it can never point past the end.
     last_filtered: Option<Arc<Vec<RowIdx>>>,
@@ -171,9 +180,22 @@ impl RowTable {
         Self {
             store,
             scroll: UniformListScrollHandle::new(),
+            hscroll: ScrollHandle::new(),
             last_filtered: None,
             _store_subscription: subscription,
         }
+    }
+
+    /// The horizontal scroll state of header and body, for tests.
+    #[cfg(test)]
+    pub(crate) fn hscroll(&self) -> &ScrollHandle {
+        &self.hscroll
+    }
+
+    /// The vertical scroll state of the body, for tests.
+    #[cfg(test)]
+    pub(crate) fn vscroll(&self) -> ScrollHandle {
+        self.scroll.0.borrow().base_handle.clone()
     }
 }
 
@@ -206,6 +228,20 @@ impl Render for RowTable {
         }
 
         let list_filtered = filtered.clone();
+        let mut rows = uniform_list("rows", count, move |range, _window, _cx| {
+            range
+                .map(|ix| {
+                    let row = &report.rows[list_filtered[ix] as usize];
+                    body_row(ix, row, show_hash, palette)
+                })
+                .collect::<Vec<_>>()
+        })
+        .flex_1()
+        .track_scroll(&self.scroll);
+        // Without this the list turns a horizontal wheel into vertical scrolling
+        // (`UniformList` has no `restrict_scroll_to_axis()` builder).
+        rows.style().restrict_scroll_to_axis = Some(true);
+
         div()
             .size_full()
             .flex()
@@ -219,18 +255,31 @@ impl Render for RowTable {
                     .text_color(palette.muted_fg)
                     .child(meta),
             )
-            .child(header_row(show_hash, &palette))
             .child(
-                uniform_list("rows", count, move |range, _window, _cx| {
-                    range
-                        .map(|ix| {
-                            let row = &report.rows[list_filtered[ix] as usize];
-                            body_row(ix, row, show_hash, palette)
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .flex_1()
-                .track_scroll(&self.scroll),
+                // Header and body scroll horizontally together once the pane is
+                // narrower than the columns' minimum widths; the body scrolls
+                // vertically on its own. `restrict_scroll_to_axis` keeps a
+                // vertical wheel from also moving this container sideways.
+                div()
+                    .id("rows-hscroll")
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .w_full()
+                    .overflow_x_scroll()
+                    .restrict_scroll_to_axis()
+                    .track_scroll(&self.hscroll)
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .h_full()
+                            .w_full()
+                            .min_w(px(min_table_width(show_hash)))
+                            .child(header_row(show_hash, &palette))
+                            .child(rows),
+                    )
+                    .horizontal_scrollbar(&self.hscroll),
             )
             .into_any_element()
     }

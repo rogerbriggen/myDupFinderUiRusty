@@ -3957,6 +3957,7 @@ version = "0.1.0"
 dependencies = [
  "dupreport-core",
  "gpui-component",
+ "gpui-kit-assets",
  "gpui-pre",
  "gpui-pre-platform",
  "smol",
