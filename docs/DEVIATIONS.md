@@ -121,9 +121,7 @@ without a planned step yet.
 |---|---|---|
 | Change | §10.1 Binary artifacts | Revises PR #5: the release build and artifact upload are skipped on pull requests, so the Linux PR check takes about 1 minute again instead of about 6½. Binaries are still built and uploaded on pushes to `main` (Linux, Windows), on `v*` tags (all three OSes) and on manual runs (the ticked OSes); for a binary from a PR branch, start a manual run on that branch. |
 
----
-
-## In this PR (PR #8 — identical panel, status dots, green on top, plan step 11)
+### PR #8 — Identical panel, status dots, green on top (plan step 11)
 
 | Type | Area | Deviation |
 |---|---|---|
@@ -141,3 +139,24 @@ without a planned step yet.
 | Clarification | §7.6 Link target | A path without a node in the combined tree does nothing (cannot happen for pairs of the same report). A link to a folder that was already selected still reveals and scrolls to it. |
 | Clarification | Code | Removed the `expect(dead_code)` of `Palette::status` and `TreeViewModel::{set_ranks, reveal}`. All `ReportStore` fields and setters are now used. Several UI source files had CRLF line endings in the working tree and were normalised to LF (git's `autocrlf` makes no difference in the diff). |
 | Open | Tests | Real mouse clicks (toolbar button, panel links/rows, collapse button and bar, checkbox) and dragging the horizontal splitter are not covered; their handlers (`load_identical`, `activate_folder`, `set_collapsed`, `set_green_on_top`) are tested directly, and the layout renders in both panel states. The dot colour/tooltip rendering and the panel's pixel layout (ellipsis, alignment) are not asserted. Manually verified on Windows (light mode): the button scans the whole-lot fixture, the panel shows both pairs, the tree shows dots, clicking the `CheckDetail` link reveals and selects it (table shows its 4 rows), the collapse button collapses to the bar. Not checked in dark mode or with thousands of pairs. |
+
+---
+
+## In this PR (PR #9 — packaging and release CI, plan step 12)
+
+| Type | Area | Deviation |
+|---|---|---|
+| Clarification | §10.2 Tool choice | `cargo-packager` 0.11.8 (not `cargo-bundle`): one config (`[package.metadata.packager]` in `crates/mydupfinder-ui/Cargo.toml`) covers .deb, AppImage, NSIS and .app/.dmg. Version, description and authors come from the package, so the version still lives only in the workspace `Cargo.toml`. |
+| Clarification | §10.2 Windows format | NSIS setup .exe only, no `.msi` (WiX): cargo-packager downloads NSIS itself, so the runner needs no extra toolset. The installer is per-user (cargo-packager default `currentUser`). An MSI can be added later with `--formats wix`. |
+| Clarification | §10.2 Windows icon | `build.rs` with `winresource` 0.1.34 embeds `assets/icons/icon.ico` and version info (ProductName, FileDescription, CompanyName, LegalCopyright, OriginalFilename; file/product version from the package). `winresource` is a `[target.'cfg(windows)'.build-dependencies]` entry, so Linux/macOS builds do not compile it; the code is `#[cfg(windows)]` and also checks `CARGO_CFG_TARGET_OS`. `Cargo.lock` gained only the `winresource` package (its dependencies were already locked). |
+| Addition | §10.2 Metadata | Identifier `ch.rogerbriggen.mydupfinderui`, category Utility, icons from `assets/icons`, `out-dir` `target/packager`, `binaries-dir` `target/release`, and a `before-packaging-command` (`cargo build --release --locked -p mydupfinder-ui`), so `cargo packager --release -p mydupfinder-ui` is all that is needed. The formats are not in the config but chosen per OS on the command line. |
+| Clarification | §10.2 Debian dependencies | Runtime libraries GPUI loads: libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libvulkan1, libfontconfig1, libfreetype6, libx11-xcb1, libxcb1 and `libasound2t64 | libasound2` (renamed in Ubuntu 24.04 / Debian 13; cargo-packager writes the string verbatim into `Depends`). The list is hand-picked, not derived with `dpkg-shlibdeps`. |
+| Clarification | §10.2 macOS format | Only `--formats dmg` is requested; cargo-packager builds the `.app` as part of it and the .dmg contains it. A bare `.app` directory is not uploaded (artifacts would lose permissions and symlinks). |
+| Addition | §10.2 CI package jobs | `package-linux` / `package-windows` / `package-macos` need their test job and run on the same events except pull requests (the implicit success of a skipped test job also skips the package job). Artifacts: `mydupfinder-ui-<os>-packages`, 14 days. The test jobs keep their bare-binary artifacts from PR #5/#7 (useful for a quick test; the package jobs rebuild the release binary, a few minutes of duplicated work on a cold cache, which `rust-cache` mitigates). |
+| Clarification | §10.2 cargo-packager install | `taiki-e/install-action` has no `cargo-packager` manifest and the project publishes no prebuilt binaries, so CI runs `cargo install cargo-packager --locked --version 0.11.8` and caches the binary with `actions/cache` keyed on the version. `Swatinem/rust-cache` runs before that cache step: its post-job cleanup deletes `~/.cargo/bin` entries that existed when it started, and post steps run in reverse order, so placed after the install it would delete cargo-packager before `actions/cache` saves it. Updating cargo-packager is a manual edit (Dependabot does not see it). |
+| Clarification | §10.2 AppImage | Needs `file` and FUSE on the runner (`libfuse2t64`, falling back to `libfuse2`); `APPIMAGE_EXTRACT_AND_RUN=1` is set so the linuxdeploy AppImage tooling runs without FUSE if it is missing. |
+| Change | §10.3 Release assets | The installers (.deb, .AppImage, setup .exe, .dmg) are attached to the GitHub Release as they are instead of zipping each platform's bundle: a zip would hide the installers and the .deb/.AppImage/.dmg are already single files. No zip of the bare binaries is attached (Deferred). |
+| Addition | §10.3 Release job | Runs on `v*` tag pushes after Rustfmt and all three package jobs (`contents: write`), first checks that the tag equals `v` + the workspace version and fails otherwise, then publishes with `softprops/action-gh-release@v3` (`generate_release_notes: true`, not a draft, fails on unmatched files). Artifacts are fetched with `actions/download-artifact@v8` (the counterpart of `upload-artifact@v7`). |
+| Clarification | §10 Dependabot | `.github/dependabot.yml` already covers `cargo` (gpui group) and `github-actions`; unchanged. |
+| Deferred | §10.2 Signing | No code signing or notarization (Windows SmartScreen / macOS Gatekeeper will warn). |
+| Open | Verification | Verified on Windows only: `build.rs` embeds the icon/version info, `cargo packager --release -p mydupfinder-ui --formats nsis` produces `target/packager/mydupfinder-ui_0.1.0_x64-setup.exe` (about 7.3 MiB); the installer itself was not run. Not verified (only possible on CI): the Linux .deb/AppImage build (incl. the FUSE workaround and the dependency names), the macOS .dmg, the `actions/cache` for the installed binary, and the whole release job, which only runs for a `v*` tag. The workflow YAML parses; it was not run. |
