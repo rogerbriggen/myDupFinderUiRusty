@@ -96,15 +96,7 @@ without a planned step yet.
 | Addition | §10.1 Manual runs | `workflow_dispatch` has three boolean inputs (`linux`, `windows`, `macos`, all default on), so a manual run on any branch can build just the chosen OSes. The automatic gating (Linux on PRs/main/tags, Windows on main/tags, macOS on tags) is unchanged. |
 | Addition | §10.1 Binary artifacts | Every OS job also runs `cargo build --release --locked -p mydupfinder-ui` and uploads the executable as a workflow artifact (`mydupfinder-ui-linux-x64`, `-windows-x64`, `-macos-arm64`; 14 days). These are bare, unsigned executables for testing; installers and GitHub Releases stay in step 12. The release build adds a few minutes per job, including the Linux PR job. |
 
-### PR #7 — CI: no release build on pull requests
-
-| Type | Area | Deviation |
-|---|---|---|
-| Change | §10.1 Binary artifacts | Revises PR #5: the release build and artifact upload are skipped on pull requests, so the Linux PR check takes about 1 minute again instead of about 6½. Binaries are still built and uploaded on pushes to `main` (Linux, Windows), on `v*` tags (all three OSes) and on manual runs (the ticked OSes); for a binary from a PR branch, start a manual run on that branch. |
-
----
-
-## In this PR (PR #6 — toolbar filters, plan step 10)
+### PR #6 — Toolbar filters (plan step 10)
 
 | Type | Area | Deviation |
 |---|---|---|
@@ -119,6 +111,33 @@ without a planned step yet.
 | Clarification | §7.3 Source chips | Shown only for a report with `has_second_source`; a report with only a Base source shows none, so its `sources` stay `{Base}`. |
 | Clarification | §7.3 Inputs | Fixed 200 px wide, gpui-component `Input` at `Size::Small` with 12 px text; the hash input uses the theme's monospace family (`Theme::mono_font_family`). The inputs have no clear (×) button, Esc is the only clear affordance. |
 | Clarification | §7.3 Layout | Controls wrap. The category and source chips form one group with `margin-left: auto` (the flexible spacer): the group moves to the next toolbar line as a whole instead of chip by chip, stays right-aligned there, and only wraps internally when a full line is too narrow. |
-| Clarification | Code | The `expect(dead_code)` on the text/hash/category/source setters was removed. Still pending: `Palette::status`, `TreeViewModel::{set_ranks, reveal}` (step 11). |
-| Deferred | §7.3 | *Identical folders* button → step 11. |
+| Clarification | Code | The `expect(dead_code)` on the text/hash/category/source setters was removed. (`Palette::status` and `TreeViewModel::{set_ranks, reveal}` were wired up in PR #8.) |
+| Deferred | §7.3 | *Identical folders* button → done in PR #8 (step 11). |
 | Open | Tests | Mouse clicks on chips are not covered by automated tests (their handlers are the tested store setters). Key handling is: `keyboard_typing_into_path_filter` sends real keystrokes (Ctrl+F, typed text, Esc) through GPUI's test platform. Manually verified on Windows: Ctrl+F focuses the path filter, typing `check` filters to 25 rows, chip group layout in light mode. Dark mode not checked visually. |
+
+### PR #7 — CI: no release build on pull requests
+
+| Type | Area | Deviation |
+|---|---|---|
+| Change | §10.1 Binary artifacts | Revises PR #5: the release build and artifact upload are skipped on pull requests, so the Linux PR check takes about 1 minute again instead of about 6½. Binaries are still built and uploaded on pushes to `main` (Linux, Windows), on `v*` tags (all three OSes) and on manual runs (the ticked OSes); for a binary from a PR branch, start a manual run on that branch. |
+
+---
+
+## In this PR (PR #8 — identical panel, status dots, green on top, plan step 11)
+
+| Type | Area | Deviation |
+|---|---|---|
+| Clarification | §6 / §7.2 Panel visibility | The brief renders the panel only when `identical.len() > 0 \|\| identical_loading`, which would show nothing after a scan that found zero pairs. `ReportStore` has a new `identical_scanned` flag (set when a scan finishes, cleared by opening a report); the panel is rendered when `identical_loading \|\| identical_scanned`. It shows "Scanning…" while loading and empty, and "No identical folder pairs found." after a finished empty scan (the brief's second text "…or scan not started — click Identical folders" is not needed: a not-started scan renders no panel). Resolves the "scan done flag" idea from PR #3. |
+| Clarification | §5.9 / §7.4 Dots | Dot semantics are unchanged: without pairs `compute_statuses` returns all `None`, so a finished empty scan shows no dots and keeps the "green on top" checkbox disabled. `ReportStore::has_statuses()` (= pairs exist and statuses computed) drives both. A folder with `None` status while dots are shown (cannot happen with the current core) gets a hollow dot without tooltip. |
+| Clarification | §6 Store fields | `identical` and `statuses` are `Arc<Vec<…>>` (cheap clones into list callbacks and background-job comparisons), not plain `Vec`s. Both are empty until a scan has run. `load_identical` is a no-op without a report or while a scan is running; a rescan keeps the old result visible until the new one arrives. Opening a report clears all identical state and drops an in-flight scan (generation counter, same pattern as `open_report`); scan errors cannot occur (the core functions are infallible), so nothing writes `error`. |
+| Addition | §7.3 Toolbar | *Identical folders* button as the last toolbar item (after the chips group). Label "Scanning…" and disabled while scanning; disabled without a report. |
+| Clarification | §7.4 Green on top | Checkbox is enabled once statuses exist, default checked, and its state is kept across reports (like *auto-expand chains*). Ranks Green 0 / Yellow 1 / Red 2 / unknown 3 are handed to `TreeViewModel::set_ranks`; turning it off or opening a new report restores the alphabetical order. Only the flattened order is rebuilt: expansion and selection survive, and the selected row is scrolled back into view afterwards. The two real fixtures contain no folder whose green-first order differs from alphabetical (paired folders are already first), so the re-ordering test uses a small synthetic report written to a temp dir. |
+| Clarification | §7.4 Status dot | 8 px round dot before the name, palette colours (`#2ea043` / `#d4a017` / `#cf222e`; the dark theme uses lighter variants `#3fb950` / `#e3b341` / `#f85149`, which the brief does not specify). Tooltip is `IdenticalStatus::tooltip`. The root row gets a dot too. |
+| Clarification | §7.2 Panel splitter | Uses gpui-component's `v_resizable`/`resizable_panel` with the same custom painted handle as the vertical splitter (5 px, `splitter` / `splitter_hover`, hit band stays gpui-component's 9 px). The identical panel is a `fixed()` bottom panel (default 220 px, min 80 px, max `window_height − 160`, never below 80 px; recomputed on every render), so it keeps its height when the window is resized. The area above keeps gpui-component's default minimum (100 px). Text-selection suppression while dragging is not done explicitly (as for the vertical splitter). |
+| Change | §7.2 Collapse | A small ghost button `▼` (gpui-component `Button`, tooltip "Collapse") collapses the panel into a full-width `▲ Identical folders` bar — `▼`/`▲` instead of the brief's `▾`/`▴`, because those small triangles render as a barely visible dot at 12 px. It sits below the splitter group; clicking the bar restores it. The split group is always rendered (the panel is just `visible(false)`), so the splitter state, i.e. the height the user dragged to, survives collapsing and restoring. The collapsed state is kept across scans and reports and not persisted across app restarts. The splitter is not shown while collapsed. |
+| Clarification | §7.6 Table | Columns Base folder / Second folder (both link-styled, ellipsised, full path as tooltip), Files and Total size (right-aligned, 80 / 100 px). Rows (22 px) come from a `uniform_list`, sorted as returned. Header and the two folder columns share the width (min 160 px each). |
+| Addition | §7.6 Second folder | The Second folder is clickable too (the brief offers this as an improvement). Both links behave the same: select the folder, expand all its ancestors (`TreeViewModel::reveal`), refilter the table and scroll the tree row into view. |
+| Addition | §7.6 Link colour | Light `#1565c0` as specified, dark `#64b5f6` (the dark "Duplicate" blue; not in the brief), as `Palette::link`. Links have no hover colour change, only the pointer cursor. |
+| Clarification | §7.6 Link target | A path without a node in the combined tree does nothing (cannot happen for pairs of the same report). A link to a folder that was already selected still reveals and scrolls to it. |
+| Clarification | Code | Removed the `expect(dead_code)` of `Palette::status` and `TreeViewModel::{set_ranks, reveal}`. All `ReportStore` fields and setters are now used. Several UI source files had CRLF line endings in the working tree and were normalised to LF (git's `autocrlf` makes no difference in the diff). |
+| Open | Tests | Real mouse clicks (toolbar button, panel links/rows, collapse button and bar, checkbox) and dragging the horizontal splitter are not covered; their handlers (`load_identical`, `activate_folder`, `set_collapsed`, `set_green_on_top`) are tested directly, and the layout renders in both panel states. The dot colour/tooltip rendering and the panel's pixel layout (ellipsis, alignment) are not asserted. Manually verified on Windows (light mode): the button scans the whole-lot fixture, the panel shows both pairs, the tree shows dots, clicking the `CheckDetail` link reveals and selects it (table shows its 4 rows), the collapse button collapses to the bar. Not checked in dark mode or with thousands of pairs. |

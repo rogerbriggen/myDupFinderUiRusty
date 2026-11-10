@@ -3,6 +3,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app_state;
+#[cfg(test)]
+mod identical_tests;
 mod theme;
 #[cfg(test)]
 mod toolbar_tests;

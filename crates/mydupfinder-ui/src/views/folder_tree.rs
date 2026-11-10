@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use dupreport_core::{FolderId, ROOT, Report};
+use dupreport_core::{FolderId, IdenticalStatus, ROOT, Report};
 use gpui::{
     AnyElement, Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement,
     ParentElement, Render, ScrollStrategy, StatefulInteractiveElement, Styled, Subscription,
@@ -13,7 +13,7 @@ use gpui_component::{Disableable, checkbox::Checkbox, tooltip::Tooltip};
 
 use crate::app_state::ReportStore;
 use crate::theme::Palette;
-use crate::tree_view_model::TreeViewModel;
+use crate::tree_view_model::{TreeViewModel, UNKNOWN_RANK};
 
 actions!(
     folder_tree,
@@ -37,6 +37,8 @@ pub const KEY_CONTEXT: &str = "FolderTree";
 /// Fixed height of a tree row.
 const ROW_HEIGHT: f32 = 22.0;
 const FONT_SIZE: f32 = 12.0;
+/// Diameter of the identical-status dot (§7.4).
+const DOT_SIZE: f32 = 8.0;
 
 /// The tree pane view.
 pub struct FolderTreeView {
@@ -50,8 +52,10 @@ pub struct FolderTreeView {
     scrolled_to: Option<FolderId>,
     /// "auto-expand chains" setting; survives report changes (the model does not).
     auto_expand_chains: bool,
-    /// State of the "green on top" checkbox. Has no effect before step 11.
+    /// State of the "green on top" checkbox (default on, kept across reports).
     green_on_top: bool,
+    /// The statuses the model is currently ranked with; `None` = alphabetical.
+    ranked_with: Option<Arc<Vec<Option<IdenticalStatus>>>>,
     _store_subscription: Subscription,
 }
 
@@ -60,6 +64,7 @@ impl FolderTreeView {
     pub fn new(store: Entity<ReportStore>, cx: &mut Context<Self>) -> Self {
         let subscription = cx.observe(&store, |this, _, cx| {
             this.sync_report(cx);
+            this.sync_ranks(cx);
             cx.notify();
         });
         let mut view = Self {
@@ -71,9 +76,11 @@ impl FolderTreeView {
             scrolled_to: None,
             auto_expand_chains: true,
             green_on_top: true,
+            ranked_with: None,
             _store_subscription: subscription,
         };
         view.sync_report(cx);
+        view.sync_ranks(cx);
         view
     }
 
@@ -83,9 +90,56 @@ impl FolderTreeView {
         &self.model
     }
 
-    /// Statuses arrive with step 11; until then the checkbox stays disabled.
-    fn has_statuses(&self) -> bool {
-        false
+    /// Whether a scan produced statuses (dots are shown, the checkbox is enabled).
+    fn has_statuses(&self, cx: &gpui::App) -> bool {
+        self.store.read(cx).has_statuses()
+    }
+
+    /// Bring the model's ordering in line with the "green on top" checkbox and
+    /// the store's statuses (ranks: green 0, yellow 1, red 2, unknown 3). Only
+    /// the order changes: expansion and selection survive.
+    fn sync_ranks(&mut self, cx: &mut Context<Self>) {
+        let store = self.store.read(cx);
+        let want = (self.green_on_top && store.has_statuses()).then(|| store.statuses.clone());
+        let same = match (&self.ranked_with, &want) {
+            (None, None) => true,
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        };
+        if same {
+            return;
+        }
+        let Some(report) = self.report.clone() else {
+            return;
+        };
+        let ranks = want.as_ref().map(|statuses| {
+            statuses
+                .iter()
+                .map(|s| s.map_or(UNKNOWN_RANK, IdenticalStatus::rank))
+                .collect()
+        });
+        self.model.set_ranks(&report.tree, ranks);
+        self.ranked_with = want;
+        // The selected row may have moved: scroll it into view again.
+        self.scrolled_to = None;
+    }
+
+    /// Switch "green on top" on or off.
+    pub(crate) fn set_green_on_top(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.green_on_top = on;
+        self.sync_ranks(cx);
+        cx.notify();
+    }
+
+    /// Select `id`, expand its ancestors and scroll it into view (identical
+    /// panel links, §7.6).
+    pub(crate) fn reveal_and_select(&mut self, id: FolderId, cx: &mut Context<Self>) {
+        if let Some(report) = self.report.clone() {
+            self.model.reveal(&report.tree, id);
+        }
+        // Scroll even when `id` was already selected but hidden.
+        self.scrolled_to = None;
+        self.select(id, cx);
     }
 
     /// Rebuild the model when the store holds a different report: only the root
@@ -104,6 +158,8 @@ impl FolderTreeView {
             TreeViewModel::new(&r.tree, self.auto_expand_chains)
         });
         self.report = current;
+        // The new model starts alphabetical; `sync_ranks` re-applies a ranking.
+        self.ranked_with = None;
         self.scrolled_to = None;
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
     }
@@ -188,6 +244,8 @@ impl FolderTreeView {
         let palette = Palette::of(window);
         let selected = self.selected(cx);
         let rows = self.model.rows_arc();
+        let store = self.store.read(cx);
+        let statuses = store.has_statuses().then(|| store.statuses.clone());
         range
             .filter_map(|ix| rows.get(ix).copied())
             .map(|(id, depth)| {
@@ -203,6 +261,10 @@ impl FolderTreeView {
                 let name = if id == ROOT { "/" } else { node.name.as_str() };
                 let is_selected = id == selected;
                 let tip = (id != ROOT).then(|| node.path.clone());
+                // Status dot: only once a scan produced statuses.
+                let dot = statuses
+                    .as_ref()
+                    .map(|s| s.get(id as usize).copied().flatten());
                 div()
                     .id(("tree-row", id as usize))
                     .flex()
@@ -239,6 +301,26 @@ impl FolderTreeView {
                                 }))
                             }),
                     )
+                    .when_some(dot, |d, status| {
+                        d.child(
+                            div()
+                                .id(("tree-dot", id as usize))
+                                .flex_none()
+                                .size(px(DOT_SIZE))
+                                .mr(px(6.))
+                                .rounded_full()
+                                // A folder without a status (unknown) gets a hollow dot.
+                                .when_some(status, |d, s| {
+                                    let tip = s.tooltip();
+                                    d.bg(palette.status[s.rank() as usize]).tooltip(
+                                        move |window, cx| Tooltip::new(tip).build(window, cx),
+                                    )
+                                })
+                                .when(status.is_none(), |d| {
+                                    d.border_1().border_color(palette.muted_fg)
+                                }),
+                        )
+                    })
                     .child(
                         div()
                             .flex_1()
@@ -272,6 +354,7 @@ impl Render for FolderTreeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = Palette::of(window);
         let count = self.model.rows().len();
+        let has_statuses = self.has_statuses(cx);
 
         // Keep the selected row in view (keyboard moves, new report).
         let selected = self.selected(cx);
@@ -314,10 +397,9 @@ impl Render for FolderTreeView {
                         Checkbox::new("green-on-top")
                             .label("● green on top")
                             .checked(self.green_on_top)
-                            .disabled(!self.has_statuses())
+                            .disabled(!has_statuses)
                             .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                                this.green_on_top = *checked;
-                                cx.notify();
+                                this.set_green_on_top(*checked, cx);
                             })),
                     )
                     .child(

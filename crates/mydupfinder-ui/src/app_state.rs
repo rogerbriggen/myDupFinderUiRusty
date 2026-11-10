@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dupreport_core::{
-    Category, FolderId, ParseProgress, ROOT, Report, ReportError, RowIdx, RowQuery, Source, filter,
+    Category, FolderId, IdenticalFolderPair, IdenticalStatus, ParseProgress, ROOT, Report,
+    ReportError, RowIdx, RowQuery, Source, compute_statuses, filter, find_identical_folders,
 };
 use gpui::{Context, PathPromptOptions, Task};
 
@@ -102,14 +103,29 @@ pub struct ReportStore {
     /// Row indexes passing all filters, in file order.
     pub filtered: Arc<Vec<RowIdx>>,
 
+    /// Identical folder pairs of the last finished scan, in the order the
+    /// detector returned them (total size descending).
+    pub identical: Arc<Vec<IdenticalFolderPair>>,
+    /// True while an identical-folders scan is running.
+    pub identical_loading: bool,
+    /// True once a scan of the current report has finished, even when it found
+    /// no pair (§5.9 cannot tell that apart from "not scanned": `statuses` is
+    /// all `None` without pairs).
+    pub identical_scanned: bool,
+    /// Status per `FolderId` computed from `identical`; empty until a scan ran.
+    pub statuses: Arc<Vec<Option<IdenticalStatus>>>,
+
     /// Row count from which filtering moves to the background executor.
     async_filter_threshold: usize,
     /// Bumped on every refilter; stale background results are dropped.
     filter_generation: u64,
     /// Bumped on every open; stale loads are dropped.
     open_generation: u64,
+    /// Bumped on every scan start and every open; stale scan results are dropped.
+    identical_generation: u64,
     load_task: Option<Task<()>>,
     filter_task: Option<Task<()>>,
+    identical_task: Option<Task<()>>,
 }
 
 impl Default for ReportStore {
@@ -134,11 +150,17 @@ impl ReportStore {
             sources: Source::ALL.into_iter().collect(),
             show_hash: false,
             filtered: Arc::new(Vec::new()),
+            identical: Arc::new(Vec::new()),
+            identical_loading: false,
+            identical_scanned: false,
+            statuses: Arc::new(Vec::new()),
             async_filter_threshold: ASYNC_FILTER_THRESHOLD,
             filter_generation: 0,
             open_generation: 0,
+            identical_generation: 0,
             load_task: None,
             filter_task: None,
+            identical_task: None,
         }
     }
 
@@ -182,6 +204,7 @@ impl ReportStore {
         self.filter_task = None;
         self.filter_generation += 1;
         self.filtered = Arc::new(Vec::new());
+        self.clear_identical();
         cx.notify();
 
         let (tx, rx) = smol::channel::unbounded::<ParseProgress>();
@@ -213,6 +236,60 @@ impl ReportStore {
             this.update(cx, |this, cx| {
                 if this.open_generation == generation {
                     this.finish_open(result, cx);
+                }
+            })
+            .ok();
+        }));
+    }
+
+    /// Forget all identical-folders state and drop a scan still in flight.
+    fn clear_identical(&mut self) {
+        self.identical_generation += 1;
+        self.identical_task = None;
+        self.identical_loading = false;
+        self.identical_scanned = false;
+        self.identical = Arc::new(Vec::new());
+        self.statuses = Arc::new(Vec::new());
+    }
+
+    /// Whether the tree shows status dots: a scan found at least one pair
+    /// (§5.9: without pairs every status is `None`).
+    #[must_use]
+    pub fn has_statuses(&self) -> bool {
+        !self.identical.is_empty() && !self.statuses.is_empty()
+    }
+
+    /// Scan the open report for identical folder pairs and compute the folder
+    /// statuses, both on the background executor (§6). Does nothing without a
+    /// report or while a scan is running. A result that arrives after another
+    /// report was opened is dropped.
+    pub fn load_identical(&mut self, cx: &mut Context<Self>) {
+        let Some(report) = self.report.clone() else {
+            return;
+        };
+        if self.identical_loading {
+            return;
+        }
+        self.identical_generation += 1;
+        let generation = self.identical_generation;
+        self.identical_loading = true;
+        cx.notify();
+
+        let job = cx.background_executor().spawn(async move {
+            let pairs = find_identical_folders(&report.rows);
+            let statuses = compute_statuses(&report.tree, &pairs);
+            (pairs, statuses)
+        });
+        self.identical_task = Some(cx.spawn(async move |this, cx| {
+            let (pairs, statuses) = job.await;
+            this.update(cx, |this, cx| {
+                if this.identical_generation == generation {
+                    this.identical = Arc::new(pairs);
+                    this.statuses = Arc::new(statuses);
+                    this.identical_loading = false;
+                    this.identical_scanned = true;
+                    this.identical_task = None;
+                    cx.notify();
                 }
             })
             .ok();
