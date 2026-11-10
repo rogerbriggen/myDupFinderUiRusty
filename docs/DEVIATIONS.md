@@ -67,8 +67,6 @@ without a planned step yet.
 | Clarification | §4.1 / §5.4 Header | Header validation compares the **parsed** header fields joined with `;` (exactly the algorithm in §5.4 step 3), not the raw bytes. A quoted header field or a UTF-8 BOM (which the `csv` crate strips) is therefore accepted. Kept on purpose: such files are otherwise valid reports. |
 | Clarification | §5.9 Statuses | `compute_statuses` returns all `None` for an empty pair list, as specified ("no scan yet" → no dots). A completed scan that found nothing therefore looks like "not scanned" in the tree; the panel text in §7.6 covers both cases. If the UI should show all-red after an empty scan, step 11 tracks a "scan done" flag in `ReportStore` — no core change needed. |
 
----
-
 ### PR #4 — Folder tree, chain auto-expansion (plan step 9)
 
 | Type | Area | Deviation |
@@ -98,10 +96,29 @@ without a planned step yet.
 | Addition | §10.1 Manual runs | `workflow_dispatch` has three boolean inputs (`linux`, `windows`, `macos`, all default on), so a manual run on any branch can build just the chosen OSes. The automatic gating (Linux on PRs/main/tags, Windows on main/tags, macOS on tags) is unchanged. |
 | Addition | §10.1 Binary artifacts | Every OS job also runs `cargo build --release --locked -p mydupfinder-ui` and uploads the executable as a workflow artifact (`mydupfinder-ui-linux-x64`, `-windows-x64`, `-macos-arm64`; 14 days). These are bare, unsigned executables for testing; installers and GitHub Releases stay in step 12. The release build adds a few minutes per job, including the Linux PR job. |
 
----
-
-## In this PR (PR #7 — CI: no release build on pull requests)
+### PR #7 — CI: no release build on pull requests
 
 | Type | Area | Deviation |
 |---|---|---|
 | Change | §10.1 Binary artifacts | Revises PR #5: the release build and artifact upload are skipped on pull requests, so the Linux PR check takes about 1 minute again instead of about 6½. Binaries are still built and uploaded on pushes to `main` (Linux, Windows), on `v*` tags (all three OSes) and on manual runs (the ticked OSes); for a binary from a PR branch, start a manual run on that branch. |
+
+---
+
+## In this PR (PR #6 — toolbar filters, plan step 10)
+
+| Type | Area | Deviation |
+|---|---|---|
+| Clarification | §6 / §7.3 Filter persistence | Opening another report resets only the sources (as in §6). The text filter, hash filter, categories, *descendants* and *hash column* are kept, so the user can apply the same filter to several reports. The toolbar's inputs are re-synced from the store on every store change (`set_value` emits no change event, so there is no feedback loop); a value set by anything but typing is therefore always shown. |
+| Clarification | §7.3 Filter input | The store keeps the text as typed (untrimmed) and trims it when building the query, so the input never rewrites what the user types. |
+| Change | §8 Debounce | The text/hash inputs call the store on every change without the ~100 ms debounce mentioned in §8: sync filtering of < 50k rows is a few ms, and larger reports are already filtered in the background with a generation counter that drops stale results. A debounce can be added if 200k-row reports feel laggy. |
+| Clarification | §7.3 Esc | `Esc` is handled by a wrapper around each filter input: the input does not consume it (`clean_on_escape` is off), it bubbles to the wrapper, which empties the input and the store filter (only the focused input's filter is cleared). It does not move focus away from the input. Esc outside the inputs (e.g. in the folder tree) is not bound, so the tree's key handling is unchanged. |
+| Clarification | §7.3 Ctrl/Cmd+F | New action `FocusFilter`, bound in the `Explorer` key context like `OpenReport`; focuses the path filter and does nothing while no report is open (the input is disabled then). It also works while a filter input is focused: gpui-component binds the same key to its `Search` action in the more specific `Input` context, but GPUI dispatches every matching binding in order until one is handled, and single-line inputs leave `Search` unhandled (covered by `ctrl_f_from_focused_hash_input_focuses_path_filter`). |
+| Change | §6 Setters | Every filter setter (`select_folder`, `set_include_descendants`, `set_text_filter`, `set_hash_filter`, `set_category`, `set_source`) is a no-op when the value does not change, instead of always recomputing `filtered`. Otherwise e.g. Esc in an already empty filter produced a new list and scrolled the table back to the top. |
+| Addition | §7.3 Dark-mode chips | The brief only gives the light colours. Light: fill `#e8f0ff`, border `#6796e1` (off: `#ccc`). Dark: fill `#23324d`, border `#6796e1`, off border `#555`. All three are `Palette` fields (`chip_on_bg`, `chip_on_border`, `chip_off_border`). |
+| Clarification | §7.3 Chips | A chip is a pill-shaped `div` around gpui-component's `Checkbox` + label. Only the checkbox and its label are clickable, not the whole pill's padding. Chip text uses the default colour (not the category colour). Disabled (no report) chips use the checkbox's disabled style; the pill border/fill still reflects the stored state. |
+| Clarification | §7.3 Source chips | Shown only for a report with `has_second_source`; a report with only a Base source shows none, so its `sources` stay `{Base}`. |
+| Clarification | §7.3 Inputs | Fixed 200 px wide, gpui-component `Input` at `Size::Small` with 12 px text; the hash input uses the theme's monospace family (`Theme::mono_font_family`). The inputs have no clear (×) button, Esc is the only clear affordance. |
+| Clarification | §7.3 Layout | Controls wrap. The category and source chips form one group with `margin-left: auto` (the flexible spacer): the group moves to the next toolbar line as a whole instead of chip by chip, stays right-aligned there, and only wraps internally when a full line is too narrow. |
+| Clarification | Code | The `expect(dead_code)` on the text/hash/category/source setters was removed. Still pending: `Palette::status`, `TreeViewModel::{set_ranks, reveal}` (step 11). |
+| Deferred | §7.3 | *Identical folders* button → step 11. |
+| Open | Tests | Mouse clicks on chips are not covered by automated tests (their handlers are the tested store setters). Key handling is: `keyboard_typing_into_path_filter` sends real keystrokes (Ctrl+F, typed text, Esc) through GPUI's test platform. Manually verified on Windows: Ctrl+F focuses the path filter, typing `check` filters to 25 rows, chip group layout in light mode. Dark mode not checked visually. |

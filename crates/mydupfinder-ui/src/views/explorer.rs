@@ -19,7 +19,7 @@ use crate::views::folder_tree::FolderTreeView;
 use crate::views::row_table::RowTable;
 use crate::views::toolbar::Toolbar;
 
-actions!(mydupfinder, [OpenReport]);
+actions!(mydupfinder, [OpenReport, FocusFilter]);
 
 /// Text shown while no report is open (§7.2).
 pub const PLACEHOLDER: &str =
@@ -63,7 +63,7 @@ fn splitter_line(active: bool, palette: Palette) -> AnyElement {
 /// The main explorer view.
 pub struct Explorer {
     pub(crate) store: Entity<ReportStore>,
-    toolbar: Entity<Toolbar>,
+    pub(crate) toolbar: Entity<Toolbar>,
     pub(crate) tree: Entity<FolderTreeView>,
     table: Entity<RowTable>,
     focus: FocusHandle,
@@ -82,7 +82,7 @@ impl Explorer {
         });
 
         let store = cx.new(|_| ReportStore::new());
-        let toolbar = cx.new(|cx| Toolbar::new(store.clone(), cx));
+        let toolbar = cx.new(|cx| Toolbar::new(store.clone(), window, cx));
         let tree = cx.new(|cx| FolderTreeView::new(store.clone(), cx));
         let table = cx.new(|cx| RowTable::new(store.clone(), cx));
         cx.observe(&store, |_, _, cx| cx.notify()).detach();
@@ -124,6 +124,10 @@ impl Render for Explorer {
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &OpenReport, _window, cx| {
                 this.store.update(cx, |s, cx| s.pick_and_open(cx));
+            }))
+            .on_action(cx.listener(|this, _: &FocusFilter, window, cx| {
+                this.toolbar
+                    .update(cx, |t, cx| t.focus_text_filter(window, cx));
             }))
             .size_full()
             .flex()

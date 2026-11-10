@@ -28,6 +28,12 @@ pub struct Palette {
     pub splitter_hover: Hsla,
     /// Selected row background in the tree.
     pub row_selected: Hsla,
+    /// Fill of an enabled filter chip (§7.3 `on` state).
+    pub chip_on_bg: Hsla,
+    /// Border of an enabled filter chip.
+    pub chip_on_border: Hsla,
+    /// Border of a disabled (off) filter chip.
+    pub chip_off_border: Hsla,
     /// Identical-status dots: green, yellow, red.
     #[expect(dead_code, reason = "used by the status dots (step 11)")]
     pub status: [Hsla; 3],
@@ -70,6 +76,9 @@ impl Palette {
             splitter: rgb(0xcccccc).into(),
             splitter_hover: rgb(0x6796e1).into(),
             row_selected: rgba(0x4080ff2e).into(),
+            chip_on_bg: rgb(0xe8f0ff).into(),
+            chip_on_border: rgb(0x6796e1).into(),
+            chip_off_border: rgb(0xcccccc).into(),
             status: [
                 rgb(0x2ea043).into(),
                 rgb(0xd4a017).into(),
@@ -99,6 +108,9 @@ impl Palette {
             splitter: rgb(0x444444).into(),
             splitter_hover: rgb(0x6796e1).into(),
             row_selected: rgba(0x4080ff47).into(),
+            chip_on_bg: rgb(0x23324d).into(),
+            chip_on_border: rgb(0x6796e1).into(),
+            chip_off_border: rgb(0x555555).into(),
             status: [
                 rgb(0x3fb950).into(),
                 rgb(0xe3b341).into(),
