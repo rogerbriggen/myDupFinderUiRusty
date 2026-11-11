@@ -10,6 +10,30 @@ pub type FolderId = u32;
 /// The synthetic root (path `""`).
 pub const ROOT: FolderId = 0;
 
+/// Sort order of sibling folder names: the old UI's
+/// `a.localeCompare(b, undefined, { sensitivity: 'accent' })`, i.e. the
+/// Unicode (CLDR root) collation ignoring case but not accents. So `Ärger`
+/// sorts between `a` and `b` (not after `z`), `Alpha` / `alpha2` / `beta`
+/// ignore case. Equal names (`Docs` / `docs`) compare equal; callers sort stably.
+struct NameOrder(Option<icu_collator::CollatorBorrowed<'static>>);
+
+impl NameOrder {
+    fn new() -> Self {
+        let mut options = icu_collator::options::CollatorOptions::default();
+        options.strength = Some(icu_collator::options::Strength::Secondary);
+        // Compiled-in data: cannot fail in practice; fall back to a plain
+        // case-insensitive order rather than panicking.
+        Self(icu_collator::Collator::try_new(Default::default(), options).ok())
+    }
+
+    fn compare(&self, a: &str, b: &str) -> std::cmp::Ordering {
+        match &self.0 {
+            Some(collator) => collator.compare(a, b),
+            None => a.to_lowercase().cmp(&b.to_lowercase()),
+        }
+    }
+}
+
 /// One folder with aggregates over its whole subtree.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FolderNode {
@@ -100,11 +124,14 @@ impl FolderTree {
             }
         }
 
+        let order = NameOrder::new();
         for id in 0..tree.nodes.len() {
             let mut children = std::mem::take(&mut tree.nodes[id].children);
-            children.sort_by_cached_key(|&c| {
-                let name = &tree.nodes[c as usize].name;
-                (name.to_lowercase(), name.clone())
+            // Stable: names equal for the collator (e.g. `Docs` / `docs`) keep
+            // their creation order, i.e. first appearance in the file, like the
+            // old UI's stable `Array.sort` over a `Map` in insertion order.
+            children.sort_by(|&a, &b| {
+                order.compare(&tree.nodes[a as usize].name, &tree.nodes[b as usize].name)
             });
             tree.nodes[id].children = children;
         }
@@ -238,6 +265,60 @@ mod tests {
         let t = FolderTree::from_rows(&rows);
         let c = t.find("C:").unwrap();
         assert_eq!(child_names(&t, c), ["Alpha", "alpha2", "beta", "charlie"]);
+    }
+
+    /// Same order as the old UI's `localeCompare(…, {sensitivity: 'accent'})`
+    /// (values checked against Node's ICU): accents sort next to their base
+    /// letter, case is ignored, case-only twins keep their file order.
+    #[test]
+    fn sorts_children_like_locale_compare() {
+        let names = [
+            "zebra",
+            "Übersicht",
+            "Ärger",
+            "set1",
+            "café",
+            "cafe",
+            "Docs",
+            "docs",
+            "A b",
+            "a",
+            "b",
+            "Österreich",
+            "oz",
+            "10",
+            "9",
+            "_tmp",
+            "Fotos 2024",
+        ];
+        let rows: Vec<Row> = names
+            .iter()
+            .map(|n| row(&format!(r"C:\{n}\f"), 1, Category::Unique))
+            .collect();
+        let t = FolderTree::from_rows(&rows);
+        let c = t.find("C:").unwrap();
+        assert_eq!(
+            child_names(&t, c),
+            [
+                "_tmp",
+                "10",
+                "9",
+                "a",
+                "A b",
+                "Ärger",
+                "b",
+                "cafe",
+                "café",
+                "Docs",
+                "docs",
+                "Fotos 2024",
+                "Österreich",
+                "oz",
+                "set1",
+                "Übersicht",
+                "zebra",
+            ]
+        );
     }
 
     #[test]

@@ -159,6 +159,15 @@ without a planned step yet.
 | Deferred | §10.2 Signing | No code signing or notarization (Windows SmartScreen / macOS Gatekeeper will warn). |
 | Open | Verification | Verified locally on Windows: `build.rs` embeds the icon/version info, `cargo packager --release -p mydupfinder-ui --formats nsis` produces `target/packager/mydupfinder-ui_0.1.0_x64-setup.exe` (about 7.3 MiB). Verified on CI (manual runs on the PR branch): all three package jobs build and upload their installers (.deb + .AppImage, setup .exe, .dmg), and after the rust-cache reordering the `actions/cache` step saves `cargo-packager-0.11.8-Linux-X64`. Not verified: running the installers, and the release job, which only runs for a `v*` tag. |
 
+### PR #10 — Parity check against the old app (plan step 13)
+
+| Type | Area | Deviation |
+|---|---|---|
+| Change | §5.6 Child order | Children are sorted with an ICU4X collator at secondary strength (`icu_collator` 2, root locale), not with `to_lowercase()`. This matches the old UI's `localeCompare(…, {sensitivity: 'accent'})`: `Ärger` sorts next to `a` instead of after `z`, and `café` right after `cafe`. Names that compare equal (`Docs` / `docs`) keep the order in which they first occur in the report (stable sort, as in the old UI), not the brief's raw-string tie-break. If the collator cannot be created, the old lowercase order is used. Found by the parity check; see [`PARITY.md`](PARITY.md). |
+| Change | §11 Step 13 | The parity check compares logic, not two GUIs side by side. It runs the old app's own backend and Angular code (harness in `tools/parity`) against `dupreport-core`. It covers both fixtures plus ten synthetic reports, checking per-folder counts, child order, identical pairs, status dots and the filtered rows for up to 8315 UI states per report. All of them are equal. The GUI was verified by hand in steps 9–11. |
+| Clarification | §5.6 Mixed separators | A report that mixes `\` and `/` gives the old app one tree node with the first spelling's path, so its tree, dots and filter disagree. The new app keeps separate nodes. Not changed: myDupFinder writes one separator per report. |
+| Clarification | §5.7 Folder filter | With *include descendants*, a file whose path equals a sibling folder's path (`…\a\x` next to folder `…\a\x`) matched in the old app (`is_under_or_equal`). It does not match in the new tree-based filter. Not changed: this cannot happen on a real file system. |
+
 ---
 
 ## In this PR (PR #11 — review fixes: icons, macOS quit, narrow table)

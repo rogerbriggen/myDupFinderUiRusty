@@ -18,6 +18,8 @@ dupreport-core = { path = "crates/dupreport-core" }
 csv = "1"
 thiserror = "2"
 smallvec = "1"
+# Folder ordering identical to the old UI's `localeCompare(…, {sensitivity: "accent"})`.
+icu_collator = "2"
 
 # UI. `gpui-component` 0.9 builds on the `gpui-pre` snapshot of GPUI, so the
 # versions must be pinned exactly and updated together.
