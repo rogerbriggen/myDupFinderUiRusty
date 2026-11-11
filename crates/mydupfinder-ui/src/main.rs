@@ -14,7 +14,8 @@ mod views;
 use std::path::PathBuf;
 
 use gpui::{
-    App, AppContext, Bounds, KeyBinding, TitlebarOptions, WindowBounds, WindowOptions, px, size,
+    App, AppContext, Bounds, KeyBinding, QuitMode, TitlebarOptions, WindowBounds, WindowOptions,
+    px, size,
 };
 use gpui_component::Root;
 use views::explorer::{Explorer, FocusFilter, KEY_CONTEXT, OpenReport};
@@ -53,32 +54,38 @@ fn main() {
     // Optional first argument: a report to open at startup.
     let initial: Option<PathBuf> = std::env::args_os().nth(1).map(PathBuf::from);
 
-    gpui_platform::application().run(move |cx: &mut App| {
-        gpui_component::init(cx);
-        cx.bind_keys([
-            KeyBinding::new(OPEN_KEYSTROKE, OpenReport, Some(KEY_CONTEXT)),
-            KeyBinding::new(FIND_KEYSTROKE, FocusFilter, Some(KEY_CONTEXT)),
-        ]);
-        bind_tree_keys(cx);
+    gpui_platform::application()
+        // gpui-component loads its icons (e.g. the checkbox tick) from `icons/*.svg`.
+        .with_assets(gpui_kit_assets::Assets)
+        // The app has one window and no way to reopen it, so closing it quits,
+        // on macOS too (GPUI's default there keeps the process running).
+        .with_quit_mode(QuitMode::LastWindowClosed)
+        .run(move |cx: &mut App| {
+            gpui_component::init(cx);
+            cx.bind_keys([
+                KeyBinding::new(OPEN_KEYSTROKE, OpenReport, Some(KEY_CONTEXT)),
+                KeyBinding::new(FIND_KEYSTROKE, FocusFilter, Some(KEY_CONTEXT)),
+            ]);
+            bind_tree_keys(cx);
 
-        let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitlebarOptions {
-                title: Some(WINDOW_TITLE.into()),
+            let bounds = Bounds::centered(None, size(px(1280.), px(800.)), cx);
+            let options = WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some(WINDOW_TITLE.into()),
+                    ..Default::default()
+                }),
+                window_min_size: Some(size(px(800.), px(500.))),
                 ..Default::default()
-            }),
-            window_min_size: Some(size(px(800.), px(500.))),
-            ..Default::default()
-        };
+            };
 
-        cx.open_window(options, |window, cx| {
-            let view = cx.new(|cx| Explorer::new(initial.clone(), window, cx));
-            cx.new(|cx| Root::new(view, window, cx))
-        })
-        .expect("failed to open main window");
-        cx.activate(true);
-    });
+            cx.open_window(options, |window, cx| {
+                let view = cx.new(|cx| Explorer::new(initial.clone(), window, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            })
+            .expect("failed to open main window");
+            cx.activate(true);
+        });
 }
 
 #[cfg(test)]
@@ -254,6 +261,75 @@ mod tests {
         for &child in &t.node(cur).children {
             assert!(tree.read_with(cx, |v, _| v.model().position(child).is_some()));
         }
+    }
+
+    #[test]
+    fn component_icons_are_bundled() {
+        use gpui::AssetSource;
+        // The checkbox tick (and other component icons) must load from the
+        // asset source registered in `main`.
+        let svg = gpui_kit_assets::Assets.load("icons/check.svg").unwrap();
+        assert!(svg.is_some_and(|data| data.starts_with(b"<svg")));
+    }
+
+    #[gpui::test]
+    fn narrow_table_scrolls_horizontally(cx: &mut TestAppContext) {
+        use crate::views::row_table::min_table_width;
+
+        cx.update(gpui_component::init);
+        let (view, cx) = cx.add_window_view(|window, cx| Explorer::new(None, window, cx));
+        let store = view.read_with(cx, |e, _| e.store.clone());
+        let table = view.read_with(cx, |e, _| e.table.clone());
+        store.update(cx, |s, cx| s.open_report(PathBuf::from(WHOLE_LOT), cx));
+        cx.run_until_parked();
+        let hscroll =
+            |cx: &mut gpui::VisualTestContext| table.read_with(cx, |t, _| t.hscroll().clone());
+
+        cx.simulate_resize(size(px(1600.), px(800.)));
+        draw(cx);
+        assert_eq!(
+            hscroll(cx).max_offset().x,
+            px(0.),
+            "wide pane: nothing to scroll"
+        );
+
+        // Minimum window size: the table pane is narrower than the columns.
+        cx.simulate_resize(size(px(800.), px(500.)));
+        for show_hash in [false, true] {
+            store.update(cx, |s, cx| s.set_show_hash(show_hash, cx));
+            draw(cx);
+            let h = hscroll(cx);
+            let viewport = h.bounds().size.width;
+            assert!(
+                viewport < px(min_table_width(show_hash)),
+                "pane {viewport:?}"
+            );
+            let content = viewport + h.max_offset().x;
+            assert!(
+                (content - px(min_table_width(show_hash))).abs() < px(1.),
+                "scrollable width {content:?}, hash {show_hash}"
+            );
+        }
+
+        // A vertical wheel scrolls only the rows; a horizontal one (Shift+wheel
+        // on Windows) only moves header and body sideways.
+        let vscroll =
+            |cx: &mut gpui::VisualTestContext| table.read_with(cx, |t, _| t.vscroll().clone());
+        let wheel = |cx: &mut gpui::VisualTestContext, x: f32, y: f32| {
+            let position = hscroll(cx).bounds().center();
+            cx.simulate_event(gpui::ScrollEvent {
+                position,
+                delta: gpui::ScrollDelta::Pixels(gpui::point(px(x), px(y))),
+                ..Default::default()
+            });
+            draw(cx);
+        };
+        wheel(cx, 0., -60.);
+        assert_eq!(vscroll(cx).offset().y, px(-60.));
+        assert_eq!(hscroll(cx).offset().x, px(0.));
+        wheel(cx, -50., 0.);
+        assert_eq!(hscroll(cx).offset().x, px(-50.));
+        assert_eq!(vscroll(cx).offset().y, px(-60.));
     }
 
     #[gpui::test]

@@ -157,11 +157,9 @@ without a planned step yet.
 | Addition | §10.3 Release job | Runs on `v*` tag pushes after Rustfmt and all three package jobs (`contents: write`), first checks that the tag equals `v` + the workspace version and fails otherwise, then publishes with `softprops/action-gh-release@v3` (`generate_release_notes: true`, not a draft, fails on unmatched files). Artifacts are fetched with `actions/download-artifact@v8` (the counterpart of `upload-artifact@v7`). |
 | Clarification | §10 Dependabot | `.github/dependabot.yml` already covers `cargo` (gpui group) and `github-actions`; unchanged. |
 | Deferred | §10.2 Signing | No code signing or notarization (Windows SmartScreen / macOS Gatekeeper will warn). |
-| Open | Verification | Verified on Windows only: `build.rs` embeds the icon/version info, `cargo packager --release -p mydupfinder-ui --formats nsis` produces `target/packager/mydupfinder-ui_0.1.0_x64-setup.exe` (about 7.3 MiB); the installer itself was not run. Not verified (only possible on CI): the Linux .deb/AppImage build (incl. the FUSE workaround and the dependency names), the macOS .dmg, the `actions/cache` for the installed binary, and the whole release job, which only runs for a `v*` tag. The workflow YAML parses; it was not run. |
+| Open | Verification | Verified locally on Windows: `build.rs` embeds the icon/version info, `cargo packager --release -p mydupfinder-ui --formats nsis` produces `target/packager/mydupfinder-ui_0.1.0_x64-setup.exe` (about 7.3 MiB). Verified on CI (manual runs on the PR branch): all three package jobs build and upload their installers (.deb + .AppImage, setup .exe, .dmg), and after the rust-cache reordering the `actions/cache` step saves `cargo-packager-0.11.8-Linux-X64`. Not verified: running the installers, and the release job, which only runs for a `v*` tag. |
 
----
-
-## In this PR (PR #10 — parity check, plan step 13)
+### PR #10 — Parity check against the old app (plan step 13)
 
 | Type | Area | Deviation |
 |---|---|---|
@@ -169,3 +167,14 @@ without a planned step yet.
 | Change | §11 Step 13 | The parity check compares logic, not two GUIs side by side. It runs the old app's own backend and Angular code (harness in `tools/parity`) against `dupreport-core`. It covers both fixtures plus ten synthetic reports, checking per-folder counts, child order, identical pairs, status dots and the filtered rows for up to 8315 UI states per report. All of them are equal. The GUI was verified by hand in steps 9–11. |
 | Clarification | §5.6 Mixed separators | A report that mixes `\` and `/` gives the old app one tree node with the first spelling's path, so its tree, dots and filter disagree. The new app keeps separate nodes. Not changed: myDupFinder writes one separator per report. |
 | Clarification | §5.7 Folder filter | With *include descendants*, a file whose path equals a sibling folder's path (`…\a\x` next to folder `…\a\x`) matched in the old app (`is_under_or_equal`). It does not match in the new tree-based filter. Not changed: this cannot happen on a real file system. |
+
+---
+
+## In this PR (PR #11 — review fixes: icons, macOS quit, narrow table)
+
+| Type | Area | Deviation |
+|---|---|---|
+| Addition | §2 Dependencies | `gpui-kit-assets` =0.9.0 (released with `gpui-component` 0.9.0) is registered with `.with_assets(gpui_kit_assets::Assets)`. gpui-component draws its icons from `icons/*.svg` through the app's asset source. Without one, the checkbox tick was missing, so a checked box looked like a filled square. Only the 101 default component icons are embedded. |
+| Change | §7 Window lifecycle | `QuitMode::LastWindowClosed` on every platform. GPUI's default on macOS keeps the process running after its last window closes. This app has a single window and no way to reopen it, so a closed window left a running app without a window that the Dock icon could not bring back. Closing the window now quits, as on Windows and Linux. |
+| Change | §7.5 Narrow table | The columns need 640 px (770 px with Hash), but at the minimum window width of 800 px the table pane is narrower. Previously the rightmost columns were cut off. Now header and body sit in one horizontal scroll container, sized to at least the sum of the minimum widths, with a gpui-component horizontal scrollbar. The rows scroll vertically on their own. Both scroll areas are restricted to their axis, so a vertical wheel never moves the table sideways and a horizontal wheel (Shift+wheel on Windows) never scrolls the rows. Columns keep the widths from §7.5; there is no responsive hiding. |
+| Open | Tests | Covered by tests: the bundled `icons/check.svg` loads; at 800×500 the scrollable width equals the minimum column widths (with and without Hash); simulated vertical and horizontal wheel events each move only their own axis. Checked by hand on Windows: the checkbox ticks are visible. Not checked by hand: scrolling with a real mouse (wheel input injected from a script did not reach the window, not even on `main`) and the scrollbar's look. The macOS quit behaviour is untested (no Mac available); it relies on GPUI's `QuitMode`. |
