@@ -140,9 +140,7 @@ without a planned step yet.
 | Clarification | Code | Removed the `expect(dead_code)` of `Palette::status` and `TreeViewModel::{set_ranks, reveal}`. All `ReportStore` fields and setters are now used. Several UI source files had CRLF line endings in the working tree and were normalised to LF (git's `autocrlf` makes no difference in the diff). |
 | Open | Tests | Real mouse clicks (toolbar button, panel links/rows, collapse button and bar, checkbox) and dragging the horizontal splitter are not covered; their handlers (`load_identical`, `activate_folder`, `set_collapsed`, `set_green_on_top`) are tested directly, and the layout renders in both panel states. The dot colour/tooltip rendering and the panel's pixel layout (ellipsis, alignment) are not asserted. Manually verified on Windows (light mode): the button scans the whole-lot fixture, the panel shows both pairs, the tree shows dots, clicking the `CheckDetail` link reveals and selects it (table shows its 4 rows), the collapse button collapses to the bar. Not checked in dark mode or with thousands of pairs. |
 
----
-
-## In this PR (PR #9 — packaging and release CI, plan step 12)
+### PR #9 — Packaging and release CI (plan step 12)
 
 | Type | Area | Deviation |
 |---|---|---|
@@ -160,3 +158,14 @@ without a planned step yet.
 | Clarification | §10 Dependabot | `.github/dependabot.yml` already covers `cargo` (gpui group) and `github-actions`; unchanged. |
 | Deferred | §10.2 Signing | No code signing or notarization (Windows SmartScreen / macOS Gatekeeper will warn). |
 | Open | Verification | Verified on Windows only: `build.rs` embeds the icon/version info, `cargo packager --release -p mydupfinder-ui --formats nsis` produces `target/packager/mydupfinder-ui_0.1.0_x64-setup.exe` (about 7.3 MiB); the installer itself was not run. Not verified (only possible on CI): the Linux .deb/AppImage build (incl. the FUSE workaround and the dependency names), the macOS .dmg, the `actions/cache` for the installed binary, and the whole release job, which only runs for a `v*` tag. The workflow YAML parses; it was not run. |
+
+---
+
+## In this PR (PR #10 — parity check, plan step 13)
+
+| Type | Area | Deviation |
+|---|---|---|
+| Change | §5.6 Child order | Children are sorted with an ICU4X collator at secondary strength (`icu_collator` 2, root locale), not with `to_lowercase()`. This matches the old UI's `localeCompare(…, {sensitivity: 'accent'})`: `Ärger` sorts next to `a` instead of after `z`, and `café` right after `cafe`. Names that compare equal (`Docs` / `docs`) keep the order in which they first occur in the report (stable sort, as in the old UI), not the brief's raw-string tie-break. If the collator cannot be created, the old lowercase order is used. Found by the parity check; see [`PARITY.md`](PARITY.md). |
+| Change | §11 Step 13 | The parity check compares logic, not two GUIs side by side. It runs the old app's own backend and Angular code (harness in `tools/parity`) against `dupreport-core`. It covers both fixtures plus ten synthetic reports, checking per-folder counts, child order, identical pairs, status dots and the filtered rows for up to 8315 UI states per report. All of them are equal. The GUI was verified by hand in steps 9–11. |
+| Clarification | §5.6 Mixed separators | A report that mixes `\` and `/` gives the old app one tree node with the first spelling's path, so its tree, dots and filter disagree. The new app keeps separate nodes. Not changed: myDupFinder writes one separator per report. |
+| Clarification | §5.7 Folder filter | With *include descendants*, a file whose path equals a sibling folder's path (`…\a\x` next to folder `…\a\x`) matched in the old app (`is_under_or_equal`). It does not match in the new tree-based filter. Not changed: this cannot happen on a real file system. |
