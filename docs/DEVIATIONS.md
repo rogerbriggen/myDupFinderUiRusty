@@ -170,7 +170,7 @@ without a planned step yet.
 
 ---
 
-## In this PR (PR #11 — review fixes: icons, macOS quit, narrow table)
+## PR #11 — review fixes: icons, macOS quit, narrow table
 
 | Type | Area | Deviation |
 |---|---|---|
