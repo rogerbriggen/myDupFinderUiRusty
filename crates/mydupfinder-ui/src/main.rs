@@ -9,6 +9,7 @@ mod theme;
 #[cfg(test)]
 mod toolbar_tests;
 mod tree_view_model;
+mod version;
 mod views;
 
 use std::path::PathBuf;
@@ -28,7 +29,10 @@ const FIND_KEYSTROKE: &str = if cfg!(target_os = "macos") {
     "ctrl-f"
 };
 
-const WINDOW_TITLE: &str = "myDupFinder UI";
+/// Window title, e.g. `myDupFinder UI 0.1.0+1bb8187`.
+fn window_title() -> String {
+    format!("myDupFinder UI {}", version::display_version())
+}
 
 /// Ctrl+O everywhere except macOS, where it is Cmd+O.
 const OPEN_KEYSTROKE: &str = if cfg!(target_os = "macos") {
@@ -72,7 +76,7 @@ fn main() {
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitlebarOptions {
-                    title: Some(WINDOW_TITLE.into()),
+                    title: Some(window_title().into()),
                     ..Default::default()
                 }),
                 window_min_size: Some(size(px(800.), px(500.))),
