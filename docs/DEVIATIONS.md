@@ -4,8 +4,10 @@ Running log of every place where the implementation knowingly differs from
 [`REBUILD_RUST_GPUI.md`](REBUILD_RUST_GPUI.md) — spec ambiguities that had to
 be resolved, intentional changes, and parts that are deferred to a later step.
 
-**Rule:** every PR that deviates from the brief adds its entries here under its
-own heading. When the PR is merged, its section moves into "Already in `main`".
+**Rule:** every PR that deviates from the brief adds its entries in the PR
+itself, as a new `### PR #<n> — <title>` section at the end of "Already in
+`main`" (the end of this file). The file is then correct as soon as the PR is
+merged; nothing moves afterwards.
 
 Legend: **Change** = behaves differently from the brief on purpose ·
 **Clarification** = brief was ambiguous or contradictory, this is the chosen
@@ -191,5 +193,3 @@ without a planned step yet.
 |---|---|---|
 | Addition | §10.3 Release | A tag with a SemVer pre-release part (`v0.2.0-alpha.1`, recognised by a `-` in the tag) is published as a GitHub **pre-release**, so it does not become "Latest". The version is still set only in the workspace `Cargo.toml`. |
 | Open | §10.2 Packaging | A manual CI run with `0.2.0-alpha.1` built every installer: `mydupfinder-ui_0.2.0-alpha.1_amd64.deb`, `…_x86_64.AppImage`, `…_x64-setup.exe` and `myDupFinder UI_0.2.0-alpha.1_aarch64.dmg`. Not checked: whether the package managers sort pre-releases correctly. dpkg reads `-alpha.1` as a Debian revision, so it would rank `0.2.0-alpha.1` **above** `0.2.0`; the Debian form would be `0.2.0~alpha.1`. |
-
----
