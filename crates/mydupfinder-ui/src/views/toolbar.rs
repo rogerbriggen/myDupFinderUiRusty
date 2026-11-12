@@ -9,7 +9,7 @@
 use dupreport_core::{Category, Report, Source};
 use gpui::{
     App, AppContext, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    Styled, Subscription, Window, div, prelude::FluentBuilder, px,
+    StatefulInteractiveElement, Styled, Subscription, Window, div, prelude::FluentBuilder, px,
 };
 use gpui_component::{
     ActiveTheme, Disableable, Sizable, Size,
@@ -17,10 +17,12 @@ use gpui_component::{
     checkbox::Checkbox,
     input::{Escape, Input, InputEvent, InputState},
     progress::Progress,
+    tooltip::Tooltip,
 };
 
 use crate::app_state::{LoadState, ReportStore};
 use crate::theme::Palette;
+use crate::version;
 
 /// Placeholder of the path / filename filter (§7.3).
 pub const TEXT_PLACEHOLDER: &str = "path / filename filter";
@@ -339,6 +341,17 @@ impl Render for Toolbar {
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.store.update(cx, |s, cx| s.load_identical(cx));
                     })),
+            )
+            // Far right: the app version, full git describe as tooltip.
+            .child(
+                div()
+                    .id("app-version")
+                    .flex_none()
+                    .text_color(palette.muted_fg)
+                    .child(format!("v{}", version::display_version()))
+                    .tooltip(|window, cx| {
+                        Tooltip::new(format!("git: {}", version::GIT_DESCRIBE)).build(window, cx)
+                    }),
             )
     }
 }

@@ -83,6 +83,21 @@ The release job refuses a tag that differs from the Cargo version and otherwise
 publishes a GitHub Release with the installers attached and generated notes.
 The installers are not code-signed.
 
+## Version
+
+The SemVer lives only in the workspace `Cargo.toml` (`[workspace.package] version`).
+`crates/mydupfinder-ui/build.rs` adds git information at build time by running
+`git describe --tags --always --dirty` and `git rev-parse --short HEAD` (no extra
+crates, no GitVersion tool). The app shows the result GitVersion-style as SemVer
+build metadata, e.g. `0.1.0+1bb8187` (`0.1.0+1bb8187.dirty` with uncommitted
+changes): in the window title and, with the full `git describe` string as
+tooltip, at the right end of the toolbar.
+
+Where git is not available (source tarball, container), set the environment
+variable `MYDUPFINDER_BUILD_GIT` (for example to the short sha) when building; it
+replaces the git values. If neither works the build still succeeds and the
+version is shown without the `+...` part.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
