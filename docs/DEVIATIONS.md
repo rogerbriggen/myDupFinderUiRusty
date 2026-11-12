@@ -179,7 +179,7 @@ without a planned step yet.
 | Change | §7.5 Narrow table | The columns need 640 px (770 px with Hash), but at the minimum window width of 800 px the table pane is narrower. Previously the rightmost columns were cut off. Now header and body sit in one horizontal scroll container, sized to at least the sum of the minimum widths, with a gpui-component horizontal scrollbar. The rows scroll vertically on their own. Both scroll areas are restricted to their axis, so a vertical wheel never moves the table sideways and a horizontal wheel (Shift+wheel on Windows) never scrolls the rows. Columns keep the widths from §7.5; there is no responsive hiding. |
 | Open | Tests | Covered by tests: the bundled `icons/check.svg` loads; at 800×500 the scrollable width equals the minimum column widths (with and without Hash); simulated vertical and horizontal wheel events each move only their own axis. Checked by hand on Windows: the checkbox ticks are visible. Not checked by hand: scrolling with a real mouse (wheel input injected from a script did not reach the window, not even on `main`) and the scrollbar's look. The macOS quit behaviour is untested (no Mac available); it relies on GPUI's `QuitMode`. |
 
-## PR — App version with git info
+## PR #12 — App version with git info
 
 | Type | Area | Deviation |
 |---|---|---|
