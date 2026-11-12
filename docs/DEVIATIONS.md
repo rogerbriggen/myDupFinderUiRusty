@@ -4,8 +4,10 @@ Running log of every place where the implementation knowingly differs from
 [`REBUILD_RUST_GPUI.md`](REBUILD_RUST_GPUI.md) — spec ambiguities that had to
 be resolved, intentional changes, and parts that are deferred to a later step.
 
-**Rule:** every PR that deviates from the brief adds its entries here under its
-own heading. When the PR is merged, its section moves into "Already in `main`".
+**Rule:** every PR that deviates from the brief adds its entries in the PR
+itself, as a new `### PR #<n> — <title>` section at the end of "Already in
+`main`" (the end of this file). The file is then correct as soon as the PR is
+merged; nothing moves afterwards.
 
 Legend: **Change** = behaves differently from the brief on purpose ·
 **Clarification** = brief was ambiguous or contradictory, this is the chosen
@@ -168,9 +170,7 @@ without a planned step yet.
 | Clarification | §5.6 Mixed separators | A report that mixes `\` and `/` gives the old app one tree node with the first spelling's path, so its tree, dots and filter disagree. The new app keeps separate nodes. Not changed: myDupFinder writes one separator per report. |
 | Clarification | §5.7 Folder filter | With *include descendants*, a file whose path equals a sibling folder's path (`…\a\x` next to folder `…\a\x`) matched in the old app (`is_under_or_equal`). It does not match in the new tree-based filter. Not changed: this cannot happen on a real file system. |
 
----
-
-## PR #11 — review fixes: icons, macOS quit, narrow table
+### PR #11 — review fixes: icons, macOS quit, narrow table
 
 | Type | Area | Deviation |
 |---|---|---|
@@ -179,7 +179,7 @@ without a planned step yet.
 | Change | §7.5 Narrow table | The columns need 640 px (770 px with Hash), but at the minimum window width of 800 px the table pane is narrower. Previously the rightmost columns were cut off. Now header and body sit in one horizontal scroll container, sized to at least the sum of the minimum widths, with a gpui-component horizontal scrollbar. The rows scroll vertically on their own. Both scroll areas are restricted to their axis, so a vertical wheel never moves the table sideways and a horizontal wheel (Shift+wheel on Windows) never scrolls the rows. Columns keep the widths from §7.5; there is no responsive hiding. |
 | Open | Tests | Covered by tests: the bundled `icons/check.svg` loads; at 800×500 the scrollable width equals the minimum column widths (with and without Hash); simulated vertical and horizontal wheel events each move only their own axis. Checked by hand on Windows: the checkbox ticks are visible. Not checked by hand: scrolling with a real mouse (wheel input injected from a script did not reach the window, not even on `main`) and the scrollbar's look. The macOS quit behaviour is untested (no Mac available); it relies on GPUI's `QuitMode`. |
 
-## PR #12 — App version with git info
+### PR #12 — App version with git info
 
 | Type | Area | Deviation |
 |---|---|---|
@@ -187,7 +187,7 @@ without a planned step yet.
 | Addition | Build script | `crates/mydupfinder-ui/build.rs` runs `git` (no new crates), exports `MYDUPFINDER_GIT_DESCRIBE` and `MYDUPFINDER_GIT_SHA`, and reruns when `HEAD`, the ref it points to, `packed-refs`, the index or `MYDUPFINDER_BUILD_GIT` change (worktree-aware). `MYDUPFINDER_BUILD_GIT` overrides both values for builds without git; if git fails the value is `unknown` and the build never fails. |
 | Clarification | Tags | The repository has no tags yet, so `git describe` yields the bare short sha. The shown version is always the `Cargo.toml` version plus the sha, not derived from tags, so the release tag check (`v<version>`) is unaffected. |
 
-## PR #13 — GitHub pre-releases for SemVer pre-release tags
+### PR #13 — GitHub pre-releases for SemVer pre-release tags
 
 | Type | Area | Deviation |
 |---|---|---|
