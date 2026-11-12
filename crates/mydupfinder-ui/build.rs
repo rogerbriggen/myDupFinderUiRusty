@@ -1,9 +1,86 @@
-//! Embeds the application icon and version information into the Windows
-//! executable. A no-op on every other host OS.
+//! Exports git information for the in-app version string
+//! (`MYDUPFINDER_GIT_DESCRIBE`, `MYDUPFINDER_GIT_SHA`) and embeds the application
+//! icon and version information into the Windows executable (a no-op on every
+//! other host OS).
+
+use std::path::PathBuf;
+use std::process::Command;
+
+/// Value used when no git information is available.
+const UNKNOWN: &str = "unknown";
+
+/// Run `git <args>` and return its trimmed stdout, or `None` on any failure.
+fn git(args: &[&str]) -> Option<String> {
+    let out = Command::new("git").args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(out.stdout).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+/// Absolute path printed by `git rev-parse <flag>` (git prints it relative to the
+/// current directory, which is the crate directory here).
+fn git_path(flag: &str) -> Option<PathBuf> {
+    let p = PathBuf::from(git(&["rev-parse", flag])?);
+    if p.is_absolute() {
+        Some(p)
+    } else {
+        std::env::current_dir().ok().map(|cwd| cwd.join(p))
+    }
+}
+
+/// Ask cargo to rerun when `HEAD`, the ref it points to, or the index change.
+/// In a worktree `HEAD` and the index live in the worktree git dir, while
+/// branch refs and `packed-refs` live in the common git dir.
+fn watch_git() {
+    let (Some(git_dir), Some(common_dir)) = (git_path("--git-dir"), git_path("--git-common-dir"))
+    else {
+        return;
+    };
+    let head = git_dir.join("HEAD");
+    println!("cargo:rerun-if-changed={}", head.display());
+    println!("cargo:rerun-if-changed={}", git_dir.join("index").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        common_dir.join("packed-refs").display()
+    );
+    if let Ok(content) = std::fs::read_to_string(&head)
+        && let Some(r) = content.trim().strip_prefix("ref:")
+    {
+        println!(
+            "cargo:rerun-if-changed={}",
+            common_dir.join(r.trim()).display()
+        );
+    }
+}
+
+/// Export the git describe string and short sha as compile-time env vars.
+fn export_git_info() {
+    println!("cargo:rerun-if-env-changed=MYDUPFINDER_BUILD_GIT");
+    watch_git();
+
+    let override_value = std::env::var("MYDUPFINDER_BUILD_GIT")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
+    let (describe, sha) = match override_value {
+        // The override replaces both values.
+        Some(v) => (v.clone(), v),
+        None => (
+            git(&["describe", "--tags", "--always", "--dirty"]).unwrap_or_else(|| UNKNOWN.into()),
+            git(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| UNKNOWN.into()),
+        ),
+    };
+    println!("cargo:rustc-env=MYDUPFINDER_GIT_DESCRIBE={describe}");
+    println!("cargo:rustc-env=MYDUPFINDER_GIT_SHA={sha}");
+}
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../../assets/icons/icon.ico");
+    export_git_info();
 
     #[cfg(windows)]
     embed_windows_resources();
