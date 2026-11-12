@@ -186,3 +186,10 @@ without a planned step yet.
 | Addition | Version display | The app shows its version GitVersion-style as SemVer build metadata (`0.1.0+<sha>`, `.dirty` appended for a modified work tree) in the window title and as a muted label at the right end of the toolbar (tooltip: full `git describe --tags --always --dirty`). The SemVer itself stays only in the workspace `Cargo.toml`; the .NET GitVersion tool is not used. |
 | Addition | Build script | `crates/mydupfinder-ui/build.rs` runs `git` (no new crates), exports `MYDUPFINDER_GIT_DESCRIBE` and `MYDUPFINDER_GIT_SHA`, and reruns when `HEAD`, the ref it points to, `packed-refs`, the index or `MYDUPFINDER_BUILD_GIT` change (worktree-aware). `MYDUPFINDER_BUILD_GIT` overrides both values for builds without git; if git fails the value is `unknown` and the build never fails. |
 | Clarification | Tags | The repository has no tags yet, so `git describe` yields the bare short sha. The shown version is always the `Cargo.toml` version plus the sha, not derived from tags, so the release tag check (`v<version>`) is unaffected. |
+
+## PR #13 — GitHub pre-releases for SemVer pre-release tags
+
+| Type | Area | Deviation |
+|---|---|---|
+| Addition | §10.3 Release | A tag with a SemVer pre-release part (`v0.2.0-alpha.1`, recognised by a `-` in the tag) is published as a GitHub **pre-release**, so it does not become "Latest". The version is still set only in the workspace `Cargo.toml`. |
+| Open | §10.2 Packaging | A manual CI run with `0.2.0-alpha.1` built every installer: `mydupfinder-ui_0.2.0-alpha.1_amd64.deb`, `…_x86_64.AppImage`, `…_x64-setup.exe` and `myDupFinder UI_0.2.0-alpha.1_aarch64.dmg`. Not checked: whether the package managers sort pre-releases correctly. dpkg reads `-alpha.1` as a Debian revision, so it would rank `0.2.0-alpha.1` **above** `0.2.0`; the Debian form would be `0.2.0~alpha.1`. |

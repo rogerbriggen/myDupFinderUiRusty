@@ -285,4 +285,6 @@ jobs:
           files: dist/*
           generate_release_notes: true
           draft: false
+          # A SemVer pre-release tag (v0.2.0-alpha.1) is published as a GitHub pre-release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: true
