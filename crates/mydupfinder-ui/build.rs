@@ -31,7 +31,8 @@ fn git_path(flag: &str) -> Option<PathBuf> {
     }
 }
 
-/// Ask cargo to rerun when `HEAD`, the ref it points to, or the index change.
+/// Ask cargo to rerun when `HEAD`, the ref it points to, the index or a
+/// work-tree source changes.
 /// In a worktree `HEAD` and the index live in the worktree git dir, while
 /// branch refs and `packed-refs` live in the common git dir.
 fn watch_git() {
@@ -53,6 +54,31 @@ fn watch_git() {
             "cargo:rerun-if-changed={}",
             common_dir.join(r.trim()).display()
         );
+    }
+    watch_work_tree();
+}
+
+/// Work-tree inputs of the binary, relative to the repository root.
+/// Directories are scanned recursively by cargo; `target/` must stay out of
+/// this list, or every build would rerun the script.
+const WORK_TREE_INPUTS: &[&str] = &[
+    "crates",
+    "assets",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+];
+
+/// Ask cargo to rerun when a tracked source changes in the work tree. An
+/// unstaged edit touches neither `HEAD` nor the index, so without this the
+/// binary would be recompiled with a stale `--dirty` result (and reverting the
+/// edit would leave a stale `.dirty`).
+fn watch_work_tree() {
+    let Some(top) = git(&["rev-parse", "--show-toplevel"]).map(PathBuf::from) else {
+        return;
+    };
+    for input in WORK_TREE_INPUTS {
+        println!("cargo:rerun-if-changed={}", top.join(input).display());
     }
 }
 
