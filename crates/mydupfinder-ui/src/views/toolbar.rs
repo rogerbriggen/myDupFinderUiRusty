@@ -133,11 +133,18 @@ impl Toolbar {
 }
 
 /// Label and disabled state of the *Identical folders* button (§7.3 item 10):
-/// "Scanning…" while a scan runs; disabled without a report or while scanning.
-pub(crate) fn identical_button(has_report: bool, scanning: bool) -> (&'static str, bool) {
+/// "Scanning…" while a scan runs, "Hide identical folders" while a result is
+/// shown; disabled without a report or while scanning.
+pub(crate) fn identical_button(
+    has_report: bool,
+    scanning: bool,
+    shown: bool,
+) -> (&'static str, bool) {
     (
         if scanning {
             "Scanning…"
+        } else if shown {
+            "Hide identical folders"
         } else {
             "Identical folders"
         },
@@ -199,7 +206,7 @@ impl Render for Toolbar {
         let include_descendants = store.include_descendants;
         let has_report = store.report.is_some();
         let (identical_label, identical_disabled) =
-            identical_button(has_report, store.identical_loading);
+            identical_button(has_report, store.identical_loading, store.identical_shown());
         let source_chips = show_source_chips(store.report.as_deref());
         let categories = store.categories.clone();
         let sources = store.sources.clone();
@@ -333,13 +340,14 @@ impl Render for Toolbar {
                         }))
                     }),
             )
-            // Last item (§7.3 item 10): starts the identical-folders scan.
+            // Last item (§7.3 item 10): starts the identical-folders scan, then
+            // switches its result (panel and dots) off and on again.
             .child(
                 Button::new("identical-folders")
                     .label(identical_label)
                     .disabled(identical_disabled)
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.store.update(cx, |s, cx| s.load_identical(cx));
+                        this.store.update(cx, |s, cx| s.toggle_identical(cx));
                     })),
             )
             // Far right: the app version, full git describe as tooltip.

@@ -139,9 +139,62 @@ fn scan_lifecycle_flags(cx: &mut TestAppContext) {
 
 #[test]
 fn button_label_and_state() {
-    assert_eq!(identical_button(false, false), ("Identical folders", true));
-    assert_eq!(identical_button(true, false), ("Identical folders", false));
-    assert_eq!(identical_button(true, true), ("Scanning…", true));
+    assert_eq!(
+        identical_button(false, false, false),
+        ("Identical folders", true)
+    );
+    assert_eq!(
+        identical_button(true, false, false),
+        ("Identical folders", false)
+    );
+    assert_eq!(identical_button(true, true, true), ("Scanning…", true));
+    assert_eq!(
+        identical_button(true, false, true),
+        ("Hide identical folders", false)
+    );
+}
+
+#[gpui::test]
+fn button_toggles_the_result_off_and_on(cx: &mut TestAppContext) {
+    let (f, cx) = setup(cx);
+    open(&f, WHOLE_LOT, cx);
+    let state = |f: &Fixture, cx: &mut VisualTestContext| {
+        f.store
+            .read_with(cx, |s, _| (s.identical_shown(), s.has_statuses()))
+    };
+    assert_eq!(state(&f, cx), (false, false));
+
+    // First press scans; a press while scanning is ignored.
+    f.store.update(cx, |s, cx| s.toggle_identical(cx));
+    assert!(f.store.read_with(cx, |s, _| s.identical_loading));
+    f.store.update(cx, |s, cx| s.toggle_identical(cx));
+    cx.run_until_parked();
+    draw(cx);
+    assert_eq!(state(&f, cx), (true, true));
+
+    // Second press hides panel and dots but keeps the result.
+    f.store.update(cx, |s, cx| s.toggle_identical(cx));
+    draw(cx);
+    assert_eq!(state(&f, cx), (false, false));
+    f.store.read_with(cx, |s, _| {
+        assert!(!s.identical_loading && s.identical_scanned);
+        assert_eq!(s.identical.len(), 2);
+    });
+
+    // Third press shows it again without rescanning.
+    f.store.update(cx, |s, cx| s.toggle_identical(cx));
+    assert!(!f.store.read_with(cx, |s, _| s.identical_loading));
+    draw(cx);
+    assert_eq!(state(&f, cx), (true, true));
+
+    // Hidden, then a new report: the next press scans again.
+    f.store.update(cx, |s, cx| s.toggle_identical(cx));
+    open(&f, WHOLE_LOT, cx);
+    assert!(!f.store.read_with(cx, |s, _| s.identical_hidden));
+    f.store.update(cx, |s, cx| s.toggle_identical(cx));
+    assert!(f.store.read_with(cx, |s, _| s.identical_loading));
+    cx.run_until_parked();
+    assert_eq!(state(&f, cx), (true, true));
 }
 
 #[test]

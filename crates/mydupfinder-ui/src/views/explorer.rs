@@ -139,8 +139,9 @@ impl Render for Explorer {
         let has_report = store.report.is_some();
         let tree_max = tree_max_width(window.viewport_size().width);
         let identical_max = identical_max_height(window.viewport_size().height);
-        // §7.2 / decision: also shown for a finished scan without pairs.
-        let show_identical = store.identical_loading || store.identical_scanned;
+        // §7.2 / decision: also shown for a finished scan without pairs;
+        // hidden again when the toolbar button switched the result off.
+        let show_identical = store.identical_shown();
         let identical_collapsed = self.identical.read(cx).collapsed;
 
         // Tree pane | splitter | row table.
