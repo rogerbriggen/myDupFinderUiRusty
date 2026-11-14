@@ -193,3 +193,9 @@ without a planned step yet.
 |---|---|---|
 | Addition | §10.3 Release | A tag with a SemVer pre-release part (`v0.2.0-alpha.1`, recognised by a `-` in the tag) is published as a GitHub **pre-release**, so it does not become "Latest". The version is still set only in the workspace `Cargo.toml`. |
 | Open | §10.2 Packaging | A manual CI run with `0.2.0-alpha.1` built every installer: `mydupfinder-ui_0.2.0-alpha.1_amd64.deb`, `…_x86_64.AppImage`, `…_x64-setup.exe` and `myDupFinder UI_0.2.0-alpha.1_aarch64.dmg`. Not checked: whether the package managers sort pre-releases correctly. dpkg reads `-alpha.1` as a Debian revision, so it would rank `0.2.0-alpha.1` **above** `0.2.0`; the Debian form would be `0.2.0~alpha.1`. |
+
+### PR #17 — Identical folders button toggles its result
+
+| Type | Area | Deviation |
+|---|---|---|
+| Change | §7.3 item 10 | The brief only says the button calls `load_identical`, so a second press just rescanned and nothing visibly changed. After a finished scan the button now reads "Hide identical folders" and hides the panel and the status dots (green on top no longer ranks); the next press shows the kept result again without rescanning ("Identical folders" ↔ "Hide identical folders"). Opening a report resets this, so the next press scans the new report. `ReportStore` has `identical_hidden`, `identical_shown()` and `toggle_identical()`. |
