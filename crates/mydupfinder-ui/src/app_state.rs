@@ -114,6 +114,9 @@ pub struct ReportStore {
     pub identical_scanned: bool,
     /// Status per `FolderId` computed from `identical`; empty until a scan ran.
     pub statuses: Arc<Vec<Option<IdenticalStatus>>>,
+    /// The user switched the scan result off again with the toolbar button:
+    /// dots and panel are hidden, the result is kept for switching it back on.
+    pub identical_hidden: bool,
 
     /// Row count from which filtering moves to the background executor.
     async_filter_threshold: usize,
@@ -154,6 +157,7 @@ impl ReportStore {
             identical_loading: false,
             identical_scanned: false,
             statuses: Arc::new(Vec::new()),
+            identical_hidden: false,
             async_filter_threshold: ASYNC_FILTER_THRESHOLD,
             filter_generation: 0,
             open_generation: 0,
@@ -250,13 +254,36 @@ impl ReportStore {
         self.identical_scanned = false;
         self.identical = Arc::new(Vec::new());
         self.statuses = Arc::new(Vec::new());
+        self.identical_hidden = false;
+    }
+
+    /// Whether the identical-folders result (panel and dots) is on screen: a
+    /// scan is running, or one finished and was not switched off.
+    #[must_use]
+    pub fn identical_shown(&self) -> bool {
+        self.identical_loading || (self.identical_scanned && !self.identical_hidden)
+    }
+
+    /// The toolbar button: scan when nothing was scanned yet, otherwise switch
+    /// the kept result off or on again (no rescan). Ignored while scanning.
+    pub fn toggle_identical(&mut self, cx: &mut Context<Self>) {
+        if self.identical_loading {
+            return;
+        }
+        if self.identical_scanned {
+            self.identical_hidden = !self.identical_hidden;
+            cx.notify();
+        } else {
+            self.load_identical(cx);
+        }
     }
 
     /// Whether the tree shows status dots: a scan found at least one pair
-    /// (§5.9: without pairs every status is `None`).
+    /// (§5.9: without pairs every status is `None`) and the result is not
+    /// switched off.
     #[must_use]
     pub fn has_statuses(&self) -> bool {
-        !self.identical.is_empty() && !self.statuses.is_empty()
+        !self.identical_hidden && !self.identical.is_empty() && !self.statuses.is_empty()
     }
 
     /// Scan the open report for identical folder pairs and compute the folder
@@ -273,6 +300,7 @@ impl ReportStore {
         self.identical_generation += 1;
         let generation = self.identical_generation;
         self.identical_loading = true;
+        self.identical_hidden = false;
         cx.notify();
 
         let job = cx.background_executor().spawn(async move {

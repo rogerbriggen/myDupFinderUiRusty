@@ -203,3 +203,9 @@ without a planned step yet.
 | Clarification | §7.4 Rows | In a single-source mode the count next to a folder only counts that source's files, and a folder whose subfolders are all hidden is drawn as a leaf. Chain auto-expansion counts only that source's files too, and switching modes expands the new mode's root chain. |
 | Clarification | §7.4 Selection | When the selected folder is hidden by the new mode, the selection moves to its nearest ancestor that is still shown, which refilters the table. An identical-panel link (§7.6) to a hidden folder switches the tree back to *Base + Second*. |
 | Clarification | §7.5 Table | The mode only affects the tree. The row table keeps following the source chips (§4.4), so with *Base only* and *descendants* on the root it still lists Second rows unless the *Second* chip is off. |
+
+### PR #17 — Identical folders button toggles its result
+
+| Type | Area | Deviation |
+|---|---|---|
+| Change | §7.3 item 10 | The brief only says the button calls `load_identical`, so a second press just rescanned and nothing visibly changed. After a finished scan the button now reads "Hide identical folders" and hides the panel and the status dots (green on top no longer ranks); the next press shows the kept result again without rescanning ("Identical folders" ↔ "Hide identical folders"). Opening a report resets this, so the next press scans the new report. `ReportStore` has `identical_hidden`, `identical_shown()` and `toggle_identical()`. |
