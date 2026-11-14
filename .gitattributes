@@ -7,3 +7,7 @@ testdata/*.csv -text
 *.png binary
 *.ico binary
 *.icns binary
+
+# Dev container files run inside Linux - always LF.
+.devcontainer/** text eol=lf
+*.sh text eol=lf

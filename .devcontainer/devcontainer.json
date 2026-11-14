@@ -1,0 +1,74 @@
+{
+  "name": "myDupFinder UI (Rusty)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  "features": {
+    // Rust via rustup. rust-toolchain.toml pins 1.99 + rustfmt + clippy;
+    // post-create.sh runs `rustup toolchain install` to fetch exactly that.
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "1.99",
+      "profile": "minimal"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+    // X11 desktop reachable via browser (noVNC, port 6080) or a VNC client
+    // (port 5901) so the GPUI app can be started inside the container.
+    "ghcr.io/devcontainers/features/desktop-lite:1": {}
+  },
+  "overrideFeatureInstallOrder": [
+    "ghcr.io/devcontainers/features/node",
+    "ghcr.io/anthropics/devcontainer-features/claude-code"
+  ],
+
+  "remoteUser": "vscode",
+
+  "mounts": [
+    // Claude Code config, login and history. The volume name is fixed (no
+    // ${devcontainerId}), so every dev container that mounts
+    // `claude-code-config` shares the same Claude folder and login.
+    "source=claude-code-config,target=/home/vscode/.claude,type=volume",
+    // GitHub CLI login, shared the same way.
+    "source=gh-cli-config,target=/home/vscode/.config/gh,type=volume",
+    // Build output and crate cache in volumes: much faster than the bind-mounted
+    // workspace on Windows/macOS hosts, and they survive container rebuilds.
+    "source=mydupfinder-ui-target-${devcontainerId},target=${containerWorkspaceFolder}/target,type=volume",
+    "source=cargo-registry,target=/usr/local/cargo/registry,type=volume",
+    "source=cargo-git,target=/usr/local/cargo/git,type=volume"
+  ],
+
+  "containerEnv": {
+    // Keeps .claude.json inside the shared volume too (it would otherwise
+    // live in /home/vscode and be lost on rebuild).
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+  },
+
+  "forwardPorts": [6080, 5901],
+  "portsAttributes": {
+    "6080": { "label": "Desktop (noVNC)", "onAutoForward": "notify" },
+    "5901": { "label": "Desktop (VNC)", "onAutoForward": "silent" }
+  },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "vadimcn.vscode-lldb",
+        "anthropic.claude-code",
+        "github.vscode-pull-request-github"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy",
+        "editor.formatOnSave": true,
+        "[rust]": { "editor.defaultFormatter": "rust-lang.rust-analyzer" }
+      }
+    }
+  }
+}
