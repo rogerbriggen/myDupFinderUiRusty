@@ -209,3 +209,9 @@ without a planned step yet.
 | Type | Area | Deviation |
 |---|---|---|
 | Change | §7.3 item 10 | The brief only says the button calls `load_identical`, so a second press just rescanned and nothing visibly changed. After a finished scan the button now reads "Hide identical folders" and hides the panel and the status dots (green on top no longer ranks); the next press shows the kept result again without rescanning ("Identical folders" ↔ "Hide identical folders"). Opening a report resets this, so the next press scans the new report. `ReportStore` has `identical_hidden`, `identical_shown()` and `toggle_identical()`. |
+
+### PR #21 — Three-day Dependabot cooldown
+
+| Type | Area | Deviation |
+|---|---|---|
+| Addition | §10 Dependency updates | Both configured Dependabot ecosystems (`cargo` and `github-actions`) explicitly use `cooldown.default-days: 3` for all dependencies. Weekly schedules and GPUI grouping are preserved. Dependabot security updates are exempt from cooldowns. |
