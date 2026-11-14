@@ -194,6 +194,16 @@ without a planned step yet.
 | Addition | §10.3 Release | A tag with a SemVer pre-release part (`v0.2.0-alpha.1`, recognised by a `-` in the tag) is published as a GitHub **pre-release**, so it does not become "Latest". The version is still set only in the workspace `Cargo.toml`. |
 | Open | §10.2 Packaging | A manual CI run with `0.2.0-alpha.1` built every installer: `mydupfinder-ui_0.2.0-alpha.1_amd64.deb`, `…_x86_64.AppImage`, `…_x64-setup.exe` and `myDupFinder UI_0.2.0-alpha.1_aarch64.dmg`. Not checked: whether the package managers sort pre-releases correctly. dpkg reads `-alpha.1` as a Debian revision, so it would rank `0.2.0-alpha.1` **above** `0.2.0`; the Debian form would be `0.2.0~alpha.1`. |
 
+### PR #15 — Tree source dropdown
+
+| Type | Area | Deviation |
+|---|---|---|
+| Addition | §7.4 Header | A small dropdown button in the tree header (before *green on top*) switches the tree between **Base + Second** (default), **Base only** and **Second only**. It is only shown for reports with a Second source, like the source chips. Its value is kept across reports and ignored for single-DB reports, which always show the full tree. Not persisted across app restarts. |
+| Addition | §5.6 Tree | `FolderNode` has per-source counts `direct_source_counts` / `source_counts` (indexed by `Source as usize`) plus `direct_files_of` / `total_files_of`. There is still one tree for both sources: a mode only hides folders without files of that source, so `FolderId`s, statuses, expansion and rank order are shared between modes. |
+| Clarification | §7.4 Rows | In a single-source mode the count next to a folder only counts that source's files, and a folder whose subfolders are all hidden is drawn as a leaf. Chain auto-expansion counts only that source's files too, and switching modes expands the new mode's root chain. |
+| Clarification | §7.4 Selection | When the selected folder is hidden by the new mode, the selection moves to its nearest ancestor that is still shown, which refilters the table. An identical-panel link (§7.6) to a hidden folder switches the tree back to *Base + Second*. |
+| Clarification | §7.5 Table | The mode only affects the tree. The row table keeps following the source chips (§4.4), so with *Base only* and *descendants* on the root it still lists Second rows unless the *Second* chip is off. |
+
 ### PR #17 — Identical folders button toggles its result
 
 | Type | Area | Deviation |

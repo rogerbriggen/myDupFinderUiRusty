@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::model::{Row, RowIdx};
+use crate::model::{Row, RowIdx, Source};
 use crate::path::{parent_of, split_folder_and_name};
 
 /// Index of a node in [`FolderTree::nodes`].
@@ -53,6 +53,10 @@ pub struct FolderNode {
     pub total_size: i64,
     /// Recursive counts, indexed by `Category as usize`.
     pub category_counts: [u32; 6],
+    /// Files directly in this folder, indexed by `Source as usize`.
+    pub direct_source_counts: [u32; 2],
+    /// Files in this folder and all descendants, indexed by `Source as usize`.
+    pub source_counts: [u32; 2],
 }
 
 impl FolderNode {
@@ -66,7 +70,23 @@ impl FolderNode {
             total_file_count: 0,
             total_size: 0,
             category_counts: [0; 6],
+            direct_source_counts: [0; 2],
+            source_counts: [0; 2],
         }
+    }
+
+    /// Files directly in this folder from `source` (`None` = both sources).
+    #[must_use]
+    pub fn direct_files_of(&self, source: Option<Source>) -> u32 {
+        source.map_or(self.direct_file_count, |s| {
+            self.direct_source_counts[s as usize]
+        })
+    }
+
+    /// Files in this subtree from `source` (`None` = both sources).
+    #[must_use]
+    pub fn total_files_of(&self, source: Option<Source>) -> u32 {
+        source.map_or(self.total_file_count, |s| self.source_counts[s as usize])
     }
 }
 
@@ -101,18 +121,21 @@ impl FolderTree {
             node.total_file_count += 1;
             node.total_size += row.size;
             node.category_counts[row.category as usize] += 1;
+            node.direct_source_counts[row.source as usize] += 1;
+            node.source_counts[row.source as usize] += 1;
             rows_by_folder[id as usize].push(i as RowIdx);
         }
 
         // Children always have larger ids than their parent, so a reverse
         // sweep rolls every subtree up exactly once.
         for id in (1..tree.nodes.len()).rev() {
-            let (total_files, total_size, counts, parent) = {
+            let (total_files, total_size, counts, sources, parent) = {
                 let n = &tree.nodes[id];
                 (
                     n.total_file_count,
                     n.total_size,
                     n.category_counts,
+                    n.source_counts,
                     n.parent.unwrap_or(ROOT),
                 )
             };
@@ -120,6 +143,9 @@ impl FolderTree {
             p.total_file_count += total_files;
             p.total_size += total_size;
             for (dst, src) in p.category_counts.iter_mut().zip(counts) {
+                *dst += src;
+            }
+            for (dst, src) in p.source_counts.iter_mut().zip(sources) {
                 *dst += src;
             }
         }
@@ -209,10 +235,41 @@ impl FolderTree {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Category, Source};
+    use crate::model::Category;
 
     fn row(path: &str, size: i64, cat: Category) -> Row {
         Row::new(path.to_string(), size, String::new(), cat, Source::Base, 1)
+    }
+
+    #[test]
+    fn counts_files_per_source() {
+        let second = Row::new(
+            r"D:\x\b.txt".to_string(),
+            1,
+            String::new(),
+            Category::New,
+            Source::Second,
+            2,
+        );
+        let rows = [
+            row(r"C:\a\one.txt", 1, Category::Missing),
+            row(r"C:\a\b\two.txt", 1, Category::Missing),
+            second,
+        ];
+        let t = FolderTree::from_rows(&rows);
+        let root = t.node(ROOT);
+        assert_eq!(root.source_counts, [2, 1]);
+        assert_eq!(root.direct_source_counts, [0, 0]);
+        assert_eq!(root.total_files_of(None), 3);
+        assert_eq!(root.total_files_of(Some(Source::Base)), 2);
+        assert_eq!(root.total_files_of(Some(Source::Second)), 1);
+        let a = t.node(t.find(r"C:\a").unwrap());
+        assert_eq!(a.direct_files_of(None), 1);
+        assert_eq!(a.direct_files_of(Some(Source::Base)), 1);
+        assert_eq!(a.direct_files_of(Some(Source::Second)), 0);
+        assert_eq!(a.total_files_of(Some(Source::Base)), 2);
+        assert_eq!(a.total_files_of(Some(Source::Second)), 0);
+        assert_eq!(t.node(t.find(r"D:\x").unwrap()).source_counts, [0, 1]);
     }
 
     fn child_names(t: &FolderTree, id: FolderId) -> Vec<&str> {
