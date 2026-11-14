@@ -10,7 +10,45 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use dupreport_core::{FolderId, FolderTree, ROOT};
+use dupreport_core::{FolderId, FolderTree, ROOT, Source};
+
+/// Which rows the tree is built from: both sources (default), or only the
+/// folders holding files of one source.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TreeSource {
+    /// Base and Second in one tree.
+    #[default]
+    Both,
+    /// Only folders with Base files.
+    Base,
+    /// Only folders with Second files.
+    Second,
+}
+
+impl TreeSource {
+    /// All modes in menu order.
+    pub const ALL: [TreeSource; 3] = [TreeSource::Both, TreeSource::Base, TreeSource::Second];
+
+    /// The source filter of this mode (`None` = both).
+    #[must_use]
+    pub fn source(self) -> Option<Source> {
+        match self {
+            Self::Both => None,
+            Self::Base => Some(Source::Base),
+            Self::Second => Some(Source::Second),
+        }
+    }
+
+    /// Menu / button label.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Both => "Base + Second",
+            Self::Base => "Base only",
+            Self::Second => "Second only",
+        }
+    }
+}
 
 /// One visible tree row: the folder and its depth (root is 0).
 pub type FlatRow = (FolderId, u32);
@@ -28,16 +66,31 @@ pub struct TreeViewModel {
     ranks: Option<Vec<u8>>,
     /// Whether expanding a folder also expands its single-subfolder chain.
     auto_expand_chains: bool,
+    /// Only folders holding files of this source are shown (`None` = all).
+    /// The root is always shown.
+    source: Option<Source>,
     flat: Arc<Vec<FlatRow>>,
 }
 
 impl TreeViewModel {
     /// A model for `tree` with only the root expanded (plus the root's chain
     /// when `auto_expand_chains` is on, see [`Self::set_auto_expand_chains`]).
+    #[cfg(test)]
     #[must_use]
     pub fn new(tree: &FolderTree, auto_expand_chains: bool) -> Self {
+        Self::with_source(tree, auto_expand_chains, None)
+    }
+
+    /// Like [`Self::new`], restricted to folders holding files of `source`.
+    #[must_use]
+    pub fn with_source(
+        tree: &FolderTree,
+        auto_expand_chains: bool,
+        source: Option<Source>,
+    ) -> Self {
         let mut model = Self::empty();
         model.auto_expand_chains = auto_expand_chains;
+        model.source = source;
         model.reset(tree);
         model
     }
@@ -49,8 +102,63 @@ impl TreeViewModel {
             expanded: HashSet::new(),
             ranks: None,
             auto_expand_chains: true,
+            source: None,
             flat: Arc::new(Vec::new()),
         }
+    }
+
+    /// The source the tree is restricted to (`None` = both).
+    #[cfg(test)]
+    #[must_use]
+    pub fn source(&self) -> Option<Source> {
+        self.source
+    }
+
+    /// Restrict the tree to folders holding files of `source` (`None` = all)
+    /// and rebuild. Expansion and ranking are kept; with chain auto-expansion
+    /// on, the root's chain in the new mode is expanded too (e.g. the Second
+    /// tree's `D:` → `backup` → … when switching from Base to Second).
+    pub fn set_source(&mut self, tree: &FolderTree, source: Option<Source>) {
+        if self.source == source {
+            return;
+        }
+        self.source = source;
+        if self.auto_expand_chains && self.expanded.contains(&ROOT) {
+            self.expand_chain(tree, ROOT);
+        }
+        self.rebuild(tree);
+    }
+
+    /// Whether `id` is part of the tree in the current source mode.
+    #[must_use]
+    pub fn shows(&self, tree: &FolderTree, id: FolderId) -> bool {
+        id == ROOT || tree.node(id).total_files_of(self.source) > 0
+    }
+
+    /// The displayed subfolders of `id` (alphabetical, unranked).
+    fn children<'t>(
+        &self,
+        tree: &'t FolderTree,
+        id: FolderId,
+    ) -> impl Iterator<Item = FolderId> + 't {
+        let source = self.source;
+        tree.node(id)
+            .children
+            .iter()
+            .copied()
+            .filter(move |&c| tree.node(c).total_files_of(source) > 0)
+    }
+
+    /// Whether `id` has displayed subfolders (otherwise it is a leaf).
+    #[must_use]
+    pub fn has_children(&self, tree: &FolderTree, id: FolderId) -> bool {
+        self.children(tree, id).next().is_some()
+    }
+
+    /// The file count shown next to `id`: its subtree, current source only.
+    #[must_use]
+    pub fn file_count(&self, tree: &FolderTree, id: FolderId) -> u32 {
+        tree.node(id).total_files_of(self.source)
     }
 
     /// Collapse everything except the root (and the root's chain when
@@ -88,11 +196,12 @@ impl TreeViewModel {
     fn expand_chain(&mut self, tree: &FolderTree, id: FolderId) {
         let mut cur = id;
         loop {
-            let &[child] = tree.node(cur).children.as_slice() else {
+            let mut children = self.children(tree, cur);
+            let (Some(child), None) = (children.next(), children.next()) else {
                 return;
             };
-            let next = tree.node(child);
-            if next.direct_file_count > 0 || next.children.is_empty() {
+            if tree.node(child).direct_files_of(self.source) > 0 || !self.has_children(tree, child)
+            {
                 return;
             }
             self.expanded.insert(child);
@@ -135,7 +244,7 @@ impl TreeViewModel {
     /// Expand `id` (and its chain when auto-expansion is on). Returns `true`
     /// when something changed (leaves never expand).
     pub fn expand(&mut self, tree: &FolderTree, id: FolderId) -> bool {
-        if tree.node(id).children.is_empty() || !self.expanded.insert(id) {
+        if !self.has_children(tree, id) || !self.expanded.insert(id) {
             return false;
         }
         if self.auto_expand_chains {
@@ -174,6 +283,17 @@ impl TreeViewModel {
         if changed {
             self.rebuild(tree);
         }
+    }
+
+    /// The nearest folder at or above `id` that is part of the tree in the
+    /// current source mode (`id` itself when it is; at worst the root).
+    #[must_use]
+    pub fn nearest_shown(&self, tree: &FolderTree, id: FolderId) -> FolderId {
+        let mut cur = id;
+        while !self.shows(tree, cur) {
+            cur = tree.node(cur).parent.unwrap_or(ROOT);
+        }
+        cur
     }
 
     /// The nearest visible folder at or above `id` (`id` itself when visible).
@@ -215,8 +335,7 @@ impl TreeViewModel {
     /// move to its first child; on a leaf do nothing. Returns the new selection.
     pub fn key_right(&mut self, tree: &FolderTree, selected: FolderId) -> FolderId {
         let id = self.visible_anchor(tree, selected);
-        let node = tree.node(id);
-        if node.children.is_empty() {
+        if !self.has_children(tree, id) {
             return id;
         }
         if self.is_expanded(id) {
@@ -234,7 +353,7 @@ impl TreeViewModel {
     /// parent (the root has none). Returns the new selection.
     pub fn key_left(&mut self, tree: &FolderTree, selected: FolderId) -> FolderId {
         let id = self.visible_anchor(tree, selected);
-        if self.is_expanded(id) && !tree.node(id).children.is_empty() {
+        if self.is_expanded(id) && self.has_children(tree, id) {
             self.collapse(tree, id);
             return id;
         }
@@ -250,16 +369,12 @@ impl TreeViewModel {
             if !self.expanded.contains(&id) {
                 continue;
             }
-            let children = &tree.node(id).children;
-            match &self.ranks {
-                None => stack.extend(children.iter().rev().map(|&c| (c, depth + 1))),
-                Some(ranks) => {
-                    let rank = |c: FolderId| ranks.get(c as usize).copied().unwrap_or(UNKNOWN_RANK);
-                    let mut ordered = children.clone();
-                    ordered.sort_by_key(|&c| rank(c)); // stable: keeps alphabetical ties
-                    stack.extend(ordered.iter().rev().map(|&c| (c, depth + 1)));
-                }
+            let mut children: Vec<FolderId> = self.children(tree, id).collect();
+            if let Some(ranks) = &self.ranks {
+                let rank = |c: FolderId| ranks.get(c as usize).copied().unwrap_or(UNKNOWN_RANK);
+                children.sort_by_key(|&c| rank(c)); // stable: keeps alphabetical ties
             }
+            stack.extend(children.iter().rev().map(|&c| (c, depth + 1)));
         }
         self.flat = Arc::new(flat);
     }
@@ -525,6 +640,109 @@ mod tests {
         assert_eq!(visible(&m), [ROOT, o, a, leaf]);
         assert!(m.is_expanded(a));
         assert!(!m.is_expanded(leaf));
+    }
+
+    fn second(path: &str) -> Row {
+        Row::new(
+            path.to_string(),
+            1,
+            String::new(),
+            Category::New,
+            Source::Second,
+            2,
+        )
+    }
+
+    /// Base: `C:\base\a\f`, `C:\base\b\f`; Second: `D:\backup\a\f`, plus one
+    /// Second file in the otherwise Base-only `C:\base\b`.
+    fn two_sources() -> (FolderTree, [FolderId; 7]) {
+        let rows = [
+            row(r"C:\base\a\f.txt"),
+            row(r"C:\base\b\f.txt"),
+            second(r"D:\backup\a\f.txt"),
+            second(r"C:\base\b\g.txt"),
+        ];
+        let t = FolderTree::from_rows(&rows);
+        let id = |p: &str| t.find(p).unwrap();
+        let ids = [
+            id("C:"),
+            id(r"C:\base"),
+            id(r"C:\base\a"),
+            id(r"C:\base\b"),
+            id("D:"),
+            id(r"D:\backup"),
+            id(r"D:\backup\a"),
+        ];
+        (t, ids)
+    }
+
+    #[test]
+    fn source_mode_hides_folders_without_files_of_that_source() {
+        let (t, [c, base, a, b, d, backup, da]) = two_sources();
+        let mut m = TreeViewModel::new(&t, false);
+        m.expand(&t, c);
+        m.expand(&t, base);
+        m.expand(&t, d);
+        m.expand(&t, backup);
+        assert_eq!(visible(&m), [ROOT, c, base, a, b, d, backup, da]);
+        assert_eq!(m.file_count(&t, ROOT), 4);
+
+        m.set_source(&t, Some(Source::Base));
+        assert_eq!(visible(&m), [ROOT, c, base, a, b], "D: has no Base files");
+        assert_eq!(m.file_count(&t, ROOT), 2);
+        assert_eq!(
+            m.file_count(&t, b),
+            1,
+            "the Second file in b is not counted"
+        );
+        assert!(!m.shows(&t, d));
+
+        m.set_source(&t, Some(Source::Second));
+        assert_eq!(visible(&m), [ROOT, c, base, b, d, backup, da]);
+        assert_eq!(m.file_count(&t, base), 1);
+        assert!(!m.shows(&t, a));
+        assert_eq!(m.nearest_shown(&t, a), base);
+        assert_eq!(m.nearest_shown(&t, da), da);
+
+        m.set_source(&t, None);
+        assert_eq!(visible(&m), [ROOT, c, base, a, b, d, backup, da]);
+    }
+
+    #[test]
+    fn hidden_children_make_a_leaf_in_source_mode() {
+        let (t, [c, base, a, ..]) = two_sources();
+        let mut m = TreeViewModel::with_source(&t, false, Some(Source::Second));
+        m.expand(&t, c);
+        m.expand(&t, base);
+        let b = t.find(r"C:\base\b").unwrap();
+        assert!(!m.has_children(&t, b));
+        assert!(!m.expand(&t, b), "a leaf in this mode");
+        assert_eq!(
+            m.key_right(&t, base),
+            b,
+            "first displayed child, a is hidden"
+        );
+        assert_eq!(m.position(a), None);
+    }
+
+    #[test]
+    fn switching_source_expands_the_new_root_chain() {
+        let (t, [c, base, _, _, d, ..]) = two_sources();
+        let mut m = TreeViewModel::with_source(&t, true, Some(Source::Base));
+        // Base: root -> C: -> base (branches): expanded down to base.
+        assert!(m.is_expanded(c) && m.is_expanded(base));
+        assert!(!m.is_expanded(d));
+        // Second: root has two children (C:, D:), so the root chain stops at once.
+        m.set_source(&t, Some(Source::Second));
+        assert!(!m.is_expanded(d));
+        // Only D: in a pure Second tree: its chain opens on switching.
+        let t2 = FolderTree::from_rows(&[row(r"C:\x\f.txt"), second(r"D:\backup\a\f.txt")]);
+        let d2 = t2.find("D:").unwrap();
+        let backup2 = t2.find(r"D:\backup").unwrap();
+        let mut m2 = TreeViewModel::with_source(&t2, true, Some(Source::Base));
+        assert!(!m2.is_expanded(d2));
+        m2.set_source(&t2, Some(Source::Second));
+        assert!(m2.is_expanded(d2) && m2.is_expanded(backup2));
     }
 
     #[test]

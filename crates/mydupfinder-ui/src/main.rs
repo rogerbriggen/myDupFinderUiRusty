@@ -8,6 +8,8 @@ mod identical_tests;
 mod theme;
 #[cfg(test)]
 mod toolbar_tests;
+#[cfg(test)]
+mod tree_source_tests;
 mod tree_view_model;
 mod version;
 mod views;

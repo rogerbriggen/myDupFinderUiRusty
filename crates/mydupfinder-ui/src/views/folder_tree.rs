@@ -9,11 +9,17 @@ use gpui::{
     ParentElement, Render, ScrollStrategy, StatefulInteractiveElement, Styled, Subscription,
     UniformListScrollHandle, Window, actions, div, prelude::FluentBuilder, px, uniform_list,
 };
-use gpui_component::{Disableable, checkbox::Checkbox, tooltip::Tooltip};
+use gpui_component::{
+    Disableable, Sizable,
+    button::Button,
+    checkbox::Checkbox,
+    menu::{DropdownMenu, PopupMenuItem},
+    tooltip::Tooltip,
+};
 
 use crate::app_state::ReportStore;
 use crate::theme::Palette;
-use crate::tree_view_model::{TreeViewModel, UNKNOWN_RANK};
+use crate::tree_view_model::{TreeSource, TreeViewModel, UNKNOWN_RANK};
 
 actions!(
     folder_tree,
@@ -54,6 +60,9 @@ pub struct FolderTreeView {
     auto_expand_chains: bool,
     /// State of the "green on top" checkbox (default on, kept across reports).
     green_on_top: bool,
+    /// Tree source dropdown (default both, kept across reports). Only applies
+    /// to reports with a Second source; single-DB reports always show all.
+    tree_source: TreeSource,
     /// The statuses the model is currently ranked with; `None` = alphabetical.
     ranked_with: Option<Arc<Vec<Option<IdenticalStatus>>>>,
     _store_subscription: Subscription,
@@ -76,6 +85,7 @@ impl FolderTreeView {
             scrolled_to: None,
             auto_expand_chains: true,
             green_on_top: true,
+            tree_source: TreeSource::default(),
             ranked_with: None,
             _store_subscription: subscription,
         };
@@ -131,10 +141,48 @@ impl FolderTreeView {
         cx.notify();
     }
 
+    /// The tree source dropdown's value.
+    #[cfg(test)]
+    pub(crate) fn tree_source(&self) -> TreeSource {
+        self.tree_source
+    }
+
+    /// The source filter the model gets for `report`: the dropdown's, or
+    /// both for a single-DB report.
+    fn effective_source(&self, report: &Report) -> Option<dupreport_core::Source> {
+        if report.has_second_source {
+            self.tree_source.source()
+        } else {
+            None
+        }
+    }
+
+    /// Show the tree of both sources, Base only or Second only. A selected
+    /// folder that is not part of the new tree moves to its nearest shown
+    /// ancestor (which refilters the table).
+    pub(crate) fn set_tree_source(&mut self, mode: TreeSource, cx: &mut Context<Self>) {
+        self.tree_source = mode;
+        if let Some(report) = self.report.clone() {
+            self.model
+                .set_source(&report.tree, self.effective_source(&report));
+            let selected = self.selected(cx);
+            let shown = self.model.nearest_shown(&report.tree, selected);
+            if shown != selected {
+                self.store.update(cx, |s, cx| s.select_folder(shown, cx));
+            }
+        }
+        self.scrolled_to = None;
+        cx.notify();
+    }
+
     /// Select `id`, expand its ancestors and scroll it into view (identical
-    /// panel links, §7.6).
+    /// panel links, §7.6). A folder hidden by the tree source switches the
+    /// tree back to both sources.
     pub(crate) fn reveal_and_select(&mut self, id: FolderId, cx: &mut Context<Self>) {
         if let Some(report) = self.report.clone() {
+            if !self.model.shows(&report.tree, id) {
+                self.set_tree_source(TreeSource::Both, cx);
+            }
             self.model.reveal(&report.tree, id);
         }
         // Scroll even when `id` was already selected but hidden.
@@ -155,7 +203,7 @@ impl FolderTreeView {
             return;
         }
         self.model = current.as_ref().map_or_else(TreeViewModel::empty, |r| {
-            TreeViewModel::new(&r.tree, self.auto_expand_chains)
+            TreeViewModel::with_source(&r.tree, self.auto_expand_chains, self.effective_source(r))
         });
         self.report = current;
         // The new model starts alphabetical; `sync_ranks` re-applies a ranking.
@@ -250,7 +298,8 @@ impl FolderTreeView {
             .filter_map(|ix| rows.get(ix).copied())
             .map(|(id, depth)| {
                 let node = report.tree.node(id);
-                let has_children = !node.children.is_empty();
+                let has_children = self.model.has_children(&report.tree, id);
+                let file_count = self.model.file_count(&report.tree, id);
                 let glyph = if !has_children {
                     "·"
                 } else if self.model.is_expanded(id) {
@@ -336,7 +385,7 @@ impl FolderTreeView {
                             .px_2()
                             .text_size(px(11.))
                             .opacity(0.6)
-                            .child(node.total_file_count.to_string()),
+                            .child(file_count.to_string()),
                     )
                     .into_any_element()
             })
@@ -355,6 +404,9 @@ impl Render for FolderTreeView {
         let palette = Palette::of(window);
         let count = self.model.rows().len();
         let has_statuses = self.has_statuses(cx);
+        let two_sources = self.report.as_ref().is_some_and(|r| r.has_second_source);
+        let mode = self.tree_source;
+        let this = cx.entity();
 
         // Keep the selected row in view (keyboard moves, new report).
         let selected = self.selected(cx);
@@ -393,6 +445,30 @@ impl Render for FolderTreeView {
                     .bg(palette.surface)
                     .border_b_1()
                     .border_color(palette.border)
+                    // Tree source: only for two-source reports (like the source chips).
+                    .when(two_sources, |d| {
+                        d.child(
+                            Button::new("tree-source")
+                                .label(format!("{} ▼", mode.label()))
+                                .xsmall()
+                                .outline()
+                                .tooltip("Which source's folders the tree shows")
+                                .dropdown_menu(move |menu, _, _| {
+                                    TreeSource::ALL.into_iter().fold(menu, |menu, item| {
+                                        let this = this.clone();
+                                        menu.item(
+                                            PopupMenuItem::new(item.label())
+                                                .checked(item == mode)
+                                                .on_click(move |_, _, cx| {
+                                                    this.update(cx, |t, cx| {
+                                                        t.set_tree_source(item, cx);
+                                                    });
+                                                }),
+                                        )
+                                    })
+                                }),
+                        )
+                    })
                     .child(
                         Checkbox::new("green-on-top")
                             .label("● green on top")
