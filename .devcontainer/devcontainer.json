@@ -32,6 +32,9 @@
     // ${devcontainerId}), so every dev container that mounts
     // `claude-code-config` shares the same Claude folder and login.
     "source=claude-code-config,target=/home/vscode/.claude,type=volume",
+    // Codex config, login and history, shared across dev containers using this
+    // fixed volume name. The CLI and Claude's Codex plugin use the same login.
+    "source=codex-config,target=/home/vscode/.codex,type=volume",
     // GitHub CLI login, shared the same way.
     "source=gh-cli-config,target=/home/vscode/.config/gh,type=volume",
     // Build output and crate cache in volumes: much faster than the bind-mounted
@@ -44,7 +47,8 @@
   "containerEnv": {
     // Keeps .claude.json inside the shared volume too (it would otherwise
     // live in /home/vscode and be lost on rebuild).
-    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    "CODEX_HOME": "/home/vscode/.codex"
   },
 
   "forwardPorts": [6080, 5901],

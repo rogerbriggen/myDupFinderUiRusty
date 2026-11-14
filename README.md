@@ -43,9 +43,12 @@ docs/                      design brief
 
 `.devcontainer/` sets up everything in one Linux container (Ubuntu 24.04):
 Rust 1.99 with rustfmt and clippy, the GPUI build dependencies, Node.js,
-GitHub CLI (`gh`), Claude Code (`claude`) and a small X11 desktop to run the app.
+Python 3 (including pip and venv; also available as `python`), ripgrep (`rg`),
+jq, GitHub CLI (`gh`), Claude Code (`claude`), Codex CLI (`codex`), the
+[Codex plugin for Claude Code](https://github.com/openai/codex-plugin-cc),
+and a small X11 desktop to run the app.
 Open the folder in VS Code and choose **Reopen in Container**. The first
-start installs the toolchain and fetches all crates.
+start installs the CLIs/plugin and toolchain and fetches all crates.
 
 - **Build & test:** the commands below work unchanged.
 - **Run the app:** open the forwarded port **6080** (*Desktop (noVNC)*) in a
@@ -64,7 +67,32 @@ start installs the toolchain and fetches all crates.
   ```
 
   The `gh` login is shared the same way through the volume `gh-cli-config`
-  (`/home/vscode/.config/gh`). Both expect the user `vscode` (uid 1000).
+  (`/home/vscode/.config/gh`).
+- **Shared Codex folder:** `~/.codex` is the named Docker volume
+  `codex-config`, with `CODEX_HOME=/home/vscode/.codex`. Login, settings and
+  history survive rebuilds and are shared with other containers on the same
+  Docker host that mount this volume:
+
+  ```jsonc
+  "mounts": ["source=codex-config,target=/home/vscode/.codex,type=volume"],
+  "containerEnv": { "CODEX_HOME": "/home/vscode/.codex" }
+  ```
+
+  Sign in once inside the container with `codex login --device-auth` and
+  follow the browser link (device code login must be enabled for your account).
+  Check with `codex login status`. Fresh configurations use
+  `cli_auth_credentials_store = "file"` so credentials stay in the volume;
+  existing configurations are preserved. If an existing configuration uses a
+  keyring, set that option to `"file"` in `~/.codex/config.toml` and sign in
+  again to share its login. This volume does not automatically import your
+  host machine's Codex login. See the
+  [Codex authentication documentation](https://learn.chatgpt.com/docs/auth).
+  All shared login volumes expect the user `vscode` (uid 1000).
+- **Codex in Claude:** the plugin is installed at user scope in the shared
+  Claude volume. Start a new Claude session and run `/codex:setup`, then use
+  `/codex:review` for a review. It uses the same Codex CLI and login.
+- **Python packages:** use `python3 -m venv .venv` and activate it with
+  `source .venv/bin/activate` before installing packages with pip.
 - `target/` and the cargo registry live in volumes, which keeps builds fast on
   Windows and macOS hosts.
 - Open the container from a normal clone, not from a `git worktree`: a
