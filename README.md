@@ -39,6 +39,38 @@ docs/                      design brief
     libssl-dev libasound2-dev
   ```
 
+### Dev container
+
+`.devcontainer/` sets up everything in one Linux container (Ubuntu 24.04):
+Rust 1.99 with rustfmt and clippy, the GPUI build dependencies, Node.js,
+GitHub CLI (`gh`), Claude Code (`claude`) and a small X11 desktop to run the app.
+Open the folder in VS Code and choose **Reopen in Container**. The first
+start installs the toolchain and fetches all crates.
+
+- **Build & test:** the commands below work unchanged.
+- **Run the app:** open the forwarded port **6080** (*Desktop (noVNC)*) in a
+  browser, password `vscode`, then
+  `cargo run -p mydupfinder-ui -- "testdata/Demo DiffFindDupsTheWholeLot dupReport.csv"`.
+  Rendering uses the Mesa software Vulkan driver (lavapipe): fine for
+  checking the UI, not for judging performance.
+- **Shared Claude folder:** `~/.claude` is the named Docker volume
+  `claude-code-config`, and `CLAUDE_CONFIG_DIR` points there, so login,
+  settings and history survive rebuilds. Any other dev container that mounts
+  the same volume shares them:
+
+  ```jsonc
+  "mounts": ["source=claude-code-config,target=/home/vscode/.claude,type=volume"],
+  "containerEnv": { "CLAUDE_CONFIG_DIR": "/home/vscode/.claude" }
+  ```
+
+  The `gh` login is shared the same way through the volume `gh-cli-config`
+  (`/home/vscode/.config/gh`). Both expect the user `vscode` (uid 1000).
+- `target/` and the cargo registry live in volumes, which keeps builds fast on
+  Windows and macOS hosts.
+- Open the container from a normal clone, not from a `git worktree`: a
+  worktree's `.git` file points to a host path that does not exist inside the
+  container.
+
 ## Commands
 
 ```sh
