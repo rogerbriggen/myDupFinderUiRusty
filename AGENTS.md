@@ -236,6 +236,10 @@ generation counter so stale results are dropped.
 
 ## 5. Project conventions
 
+### Reviews
+
+- Reviews are read-only and do not execute tests unless explicitly asked for.
+
 ### Rust
 
 - CSV parsing via the `csv` crate, configured with `;` delimiter and
